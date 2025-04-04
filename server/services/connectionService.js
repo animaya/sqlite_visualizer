@@ -260,27 +260,30 @@ async function getConnection(id) {
         db.run('PRAGMA foreign_keys = ON');
         
         // Add promise wrapper methods for convenience
+        const originalAll = db.all.bind(db);
         db.all = (sql, params = []) => {
           return new Promise((resolve, reject) => {
-            db.all(sql, params, (err, rows) => {
+            originalAll(sql, params, (err, rows) => {
               if (err) reject(err);
               else resolve(rows || []);
             });
           });
         };
         
+        const originalGet = db.get.bind(db);
         db.get = (sql, params = []) => {
           return new Promise((resolve, reject) => {
-            db.get(sql, params, (err, row) => {
+            originalGet(sql, params, (err, row) => {
               if (err) reject(err);
               else resolve(row);
             });
           });
         };
         
+        const originalRun = db.run.bind(db);
         db.run = (sql, params = []) => {
           return new Promise((resolve, reject) => {
-            db.run(sql, params, function(err) {
+            originalRun(sql, params, function(err) {
               if (err) reject(err);
               else resolve({ lastID: this.lastID, changes: this.changes });
             });

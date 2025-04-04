@@ -25,27 +25,32 @@ async function getAllTables(connectionId) {
     let tables = [];
     
     try {
-      tables = db.all(`
-        SELECT 
-          name,
-          type,
-          sql as creation_sql
-        FROM 
-          sqlite_master 
-        WHERE 
-          type = 'table' AND 
-          name NOT LIKE 'sqlite_%'
-        ORDER BY 
-          name
-      `);
+      // Using callback style for sqlite3
+      tables = await new Promise((resolve, reject) => {
+        db.all(
+          `SELECT 
+            name,
+            type,
+            sql as creation_sql
+          FROM 
+            sqlite_master 
+          WHERE 
+            type = 'table' AND 
+            name NOT LIKE 'sqlite_%'
+          ORDER BY 
+            name`,
+          [], 
+          (err, results) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(results || []);
+            }
+          }
+        );
+      });
     } catch (error) {
       console.error(`Error querying tables: ${error.message}`);
-      return [];
-    }
-    
-    // Make sure tables is an array
-    if (!Array.isArray(tables)) {
-      console.error('Tables query did not return an array');
       return [];
     }
     
@@ -60,14 +65,26 @@ async function getAllTables(connectionId) {
       }
       
       try {
-        // Get row count safely
-        const countResult = db.get(`SELECT COUNT(*) as count FROM "${table.name}"`);
+        // Get row count safely using callback style
+        const countResult = await new Promise((resolve, reject) => {
+          db.get(
+            `SELECT COUNT(*) as count FROM "${table.name}"`,
+            [],
+            (err, result) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(result || { count: 0 });
+              }
+            }
+          );
+        });
         
         tablesWithCount.push({
           name: table.name,
           type: table.type,
           creation_sql: table.creation_sql,
-          row_count: countResult ? countResult.count : 0
+          row_count: countResult.count || 0
         });
       } catch (error) {
         console.error(`Error getting row count for table ${table.name}:`, error);
