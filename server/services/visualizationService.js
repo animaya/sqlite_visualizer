@@ -54,7 +54,7 @@ async function createVisualization(visualizationData) {
     );
     
     // Get the created visualization
-    const visualization = getVisualizationById(result.lastInsertRowid);
+    const visualization = await getVisualizationById(result.lastInsertRowid);
     
     return visualization;
   } catch (error) {
@@ -91,23 +91,25 @@ async function getAllVisualizations() {
     // Convert to camelCase and parse the JSON config for each visualization
     return visualizations.map(visualization => {
       // Parse config safely
-      let parsedConfig = visualization.config;
+      let parsedConfig = {};
       try {
-        parsedConfig = JSON.parse(visualization.config);
+        if (visualization.config) {
+          parsedConfig = JSON.parse(visualization.config);
+        }
       } catch (err) {
         console.error(`Failed to parse config for visualization ${visualization.id}:`, err);
-        // Use original string if parsing fails
+        // Use empty object if parsing fails
       }
       
       return {
         id: visualization.id,
-        connection_id: visualization.connection_id,
+        connectionId: visualization.connection_id,
         name: visualization.name,
         type: visualization.type,
         config: parsedConfig,
-        table_name: visualization.table_name,
-        created_at: visualization.created_at,
-        updated_at: visualization.updated_at
+        tableName: visualization.table_name,
+        createdAt: visualization.created_at,
+        updatedAt: visualization.updated_at
       };
     });
   } catch (error) {
@@ -147,10 +149,18 @@ async function getVisualizationById(id) {
       throw new Error(`Visualization with ID ${id} not found`);
     }
     
-    // Parse the JSON config
+    // Parse the JSON config safely
+    let parsedConfig;
+    try {
+      parsedConfig = visualization.config ? JSON.parse(visualization.config) : {};
+    } catch (err) {
+      console.error(`Failed to parse config for visualization ${id}:`, err);
+      parsedConfig = {}; // Use empty object if parsing fails
+    }
+    
     return {
       ...visualization,
-      config: JSON.parse(visualization.config)
+      config: parsedConfig
     };
   } catch (error) {
     console.error(`Error retrieving visualization with ID ${id}:`, error);
@@ -170,18 +180,25 @@ async function updateVisualization(id, visualizationData) {
     // Check if visualization exists
     const existingViz = await getVisualizationById(id);
     
-    if (!existingViz) {
-      throw new Error(`Visualization with ID ${id} not found`);
-    }
-    
     // Get database
     const db = appDbService.getDb();
+    
+    // Handle config update safely
+    let configString = existingViz.config;
+    if (visualizationData.config) {
+      try {
+        configString = JSON.stringify(visualizationData.config);
+      } catch (err) {
+        console.error(`Failed to stringify config for visualization ${id}:`, err);
+        throw new Error(`Invalid configuration: ${err.message}`);
+      }
+    }
     
     // Prepare update data
     const updates = {
       name: visualizationData.name || existingViz.name,
       type: visualizationData.type || existingViz.type,
-      config: visualizationData.config ? JSON.stringify(visualizationData.config) : existingViz.config,
+      config: configString,
       table_name: visualizationData.tableName || existingViz.tableName,
       connection_id: visualizationData.connectionId || existingViz.connectionId,
       updated_at: new Date().toISOString()
@@ -223,11 +240,17 @@ async function updateVisualization(id, visualizationData) {
  */
 async function deleteVisualization(id) {
   try {
-    // Check if visualization exists
-    const visualization = await getVisualizationById(id);
-    
     // Get database
     const db = appDbService.getDb();
+    
+    // Check if visualization exists before attempting to delete
+    const vizExists = db.prepare(`
+      SELECT 1 FROM saved_visualizations WHERE id = ?
+    `).get(id);
+    
+    if (!vizExists) {
+      throw new Error(`Visualization with ID ${id} not found`);
+    }
     
     // Delete visualization
     const result = db.prepare(`
@@ -238,11 +261,6 @@ async function deleteVisualization(id) {
     // Return true if a row was deleted
     return result.changes > 0;
   } catch (error) {
-    // If the error is that the visualization was not found, rethrow it
-    if (error.message.includes('not found')) {
-      throw error;
-    }
-    
     console.error(`Error deleting visualization with ID ${id}:`, error);
     throw new Error(`Failed to delete visualization: ${error.message}`);
   }
