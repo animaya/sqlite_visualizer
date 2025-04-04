@@ -24,7 +24,8 @@ async function getAllTables(connectionId) {
     // Query for tables (excluding SQLite system tables)
     const tables = db.prepare(`
       SELECT 
-        name as table_name,
+        name,
+        type,
         sql as creation_sql
       FROM 
         sqlite_master 
@@ -39,15 +40,19 @@ async function getAllTables(connectionId) {
     const tablesWithCount = tables.map(table => {
       try {
         // Get row count
-        const countResult = db.prepare(`SELECT COUNT(*) as count FROM "${table.table_name}"`).get();
+        const countResult = db.prepare(`SELECT COUNT(*) as count FROM "${table.name}"`).get();
         return {
-          ...table,
+          name: table.name,
+          type: table.type,
+          creation_sql: table.creation_sql,
           row_count: countResult.count
         };
       } catch (error) {
-        console.error(`Error getting row count for table ${table.table_name}:`, error);
+        console.error(`Error getting row count for table ${table.name}:`, error);
         return {
-          ...table,
+          name: table.name,
+          type: table.type,
+          creation_sql: table.creation_sql,
           row_count: 0,
           error: 'Failed to count rows'
         };
@@ -207,9 +212,9 @@ async function getTableData(connectionId, tableName, options) {
     return {
       data,
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit)
+      page: options.page || 1,
+      limit: options.limit || 100,
+      totalPages: Math.ceil(total / (options.limit || 100))
     };
   } catch (error) {
     console.error(`Error retrieving data from table ${tableName}:`, error);
@@ -246,7 +251,7 @@ async function getTableSample(connectionId, tableName, limit = 10) {
     const sampleQuery = queryBuilder.buildPaginatedSelectQuery(
       tableName,
       ['*'],
-      { limit: safeLimit }
+      { page: 1, limit: safeLimit }
     );
     
     // Query for a sample of data

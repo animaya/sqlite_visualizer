@@ -370,7 +370,7 @@ function VisualizationBuilder() {
                 >
                   <option value="">Select a connection</option>
                   {connections.map(conn => (
-                    <option key={conn.id} value={conn.id}>
+                    <option key={conn.id.toString()} value={conn.id}>
                       {conn.name}
                     </option>
                   ))}

@@ -14,10 +14,10 @@
 function buildPaginatedSelectQuery(tableName, columns = ['*'], options = {}) {
   // Sanitize table name and columns
   const safeTableName = sanitizeIdentifier(tableName);
-  const safeColumns = columns.map(col => sanitizeIdentifier(col));
+  const safeColumns = columns.map(col => col === '*' ? '*' : sanitizeIdentifier(col));
   
   // Start building the query
-  let sql = `SELECT ${safeColumns.map(col => `"${col}"`).join(', ')} FROM "${safeTableName}"`;
+  let sql = `SELECT ${safeColumns.map(col => col === '*' ? '*' : `"${col}"`).join(', ')} FROM "${safeTableName}"`;
   const params = [];
   
   // Add WHERE clause if filters are provided
