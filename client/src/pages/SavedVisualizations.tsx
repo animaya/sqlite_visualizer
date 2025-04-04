@@ -54,7 +54,9 @@ function SavedVisualizations() {
       try {
         setLoading(true);
         setError(null);
+        console.log('Fetching visualizations...');
         const data = await visualizationApi.getAll();
+        console.log('Visualizations data:', data);
         setVisualizations(data);
       } catch (err: any) {
         console.error('Failed to fetch visualizations:', err);

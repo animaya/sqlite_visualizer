@@ -33,6 +33,8 @@ const API_URL = process.env.NODE_ENV === 'production'
 async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_URL}/api${endpoint}`;
   
+  console.log(`Making API request to: ${url}`);
+  
   const defaultHeaders = {
     'Content-Type': 'application/json',
   };
@@ -46,17 +48,34 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
   };
   
   try {
+    console.log(`Fetch request config:`, { url, method: config.method || 'GET' });
     const response = await fetch(url, config);
-    const data = await response.json();
+    console.log(`Received response with status: ${response.status}`);
+    
+    // Try to parse the response as JSON
+    let data;
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      // Handle non-JSON responses
+      const text = await response.text();
+      console.warn('Received non-JSON response:', text);
+      data = { message: text };
+    }
     
     if (!response.ok) {
-      const error = new Error(data.message || 'An error occurred') as ApiError;
+      const error = new Error(data.message || `API error: ${response.status}`) as ApiError;
       error.status = response.status;
       throw error;
     }
     
     return data;
   } catch (error: any) {
+    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+      console.error('Network error - possibly CORS or server not running:', error);
+      throw new Error('Cannot connect to the server. Please make sure the server is running.');
+    }
     console.error('API request failed:', error);
     throw error;
   }
