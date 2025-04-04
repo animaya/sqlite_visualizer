@@ -20,7 +20,18 @@ const SavedVisualizations: FC = () => {
       try {
         setLoading(true);
         const data = await visualizationApi.getAll();
-        setVisualizations(data);
+        // Transform the API data to match the expected Visualization type
+        const formattedData: Visualization[] = data.map(item => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          connectionId: item.connection_id || 0,
+          tableName: item.table_name || '',
+          config: typeof item.config === 'string' ? JSON.parse(item.config) : item.config,
+          createdAt: item.created_at,
+          updatedAt: item.updated_at
+        }));
+        setVisualizations(formattedData);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load visualizations');

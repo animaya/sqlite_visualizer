@@ -50,66 +50,25 @@ const TableSelector: FC<TableSelectorProps> = ({
       </div>
       
       <ul className="max-h-[500px] overflow-y-auto">
-        {tables.length === 0 ? (
-          <>
-            <li>
-              <button
-                className={`w-full text-left px-4 py-2 text-sm ${
-                  selectedTable === 'users' 
-                    ? 'bg-primary-light text-primary font-medium' 
-                    : 'text-slate-700 hover:bg-slate-50'
-                }`}
-                onClick={() => onSelectTable('users')}
-              >
-                users
-              </button>
-            </li>
-            <li>
-              <button
-                className={`w-full text-left px-4 py-2 text-sm ${
-                  selectedTable === 'products' 
-                    ? 'bg-primary-light text-primary font-medium' 
-                    : 'text-slate-700 hover:bg-slate-50'
-                }`}
-                onClick={() => onSelectTable('products')}
-              >
-                products
-              </button>
-            </li>
-            <li>
-              <button
-                className={`w-full text-left px-4 py-2 text-sm ${
-                  selectedTable === 'orders' 
-                    ? 'bg-primary-light text-primary font-medium' 
-                    : 'text-slate-700 hover:bg-slate-50'
-                }`}
-                onClick={() => onSelectTable('orders')}
-              >
-                orders
-              </button>
-            </li>
-          </>
-        ) : (
-          tables.map((table) => (
-            <li key={table.name}>
-              <button
-                className={`w-full text-left px-4 py-2 text-sm ${
-                  selectedTable === table.name 
-                    ? 'bg-primary-light text-primary font-medium' 
-                    : 'text-slate-700 hover:bg-slate-50'
-                }`}
-                onClick={() => onSelectTable(table.name)}
-              >
-                {table.name}
-                {table.rowCount !== undefined && (
-                  <span className="text-xs text-slate-400 ml-2">
-                    ({table.rowCount.toLocaleString()} rows)
-                  </span>
-                )}
-              </button>
-            </li>
-          ))
-        )}
+        {tables.map((table) => (
+          <li key={table.name}>
+            <button
+              className={`w-full text-left px-4 py-2 text-sm ${
+                selectedTable === table.name 
+                  ? 'bg-primary-light text-primary font-medium' 
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+              onClick={() => onSelectTable(table.name)}
+            >
+              {table.name}
+              {table.rowCount !== undefined && (
+                <span className="text-xs text-slate-400 ml-2">
+                  ({table.rowCount.toLocaleString()} rows)
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
       </ul>
     </div>
   );

@@ -194,16 +194,16 @@ const VisualizationBuilder: FC = () => {
     try {
       setLoading(true);
       
-      // Create visualization data object
+      // Create visualization data object with the structure expected by the API
       const visualizationData = {
         name: `${selectedTable} ${chartType} chart`,
         type: chartType,
-        connectionId: selectedConnection,
-        tableName: selectedTable,
-        config: {
+        connection_id: parseInt(selectedConnection, 10),
+        table_name: selectedTable,
+        config: JSON.stringify({
           mappings: fieldMappings,
           chartType
-        }
+        })
       };
       
       // Save to API

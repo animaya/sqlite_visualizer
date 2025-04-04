@@ -32,41 +32,6 @@ const ConnectionForm: FC<ConnectionFormProps> = ({ onAddConnection }) => {
       await onAddConnection({ name, path });
       
       // Reset form on success
-cat > /Users/amirahmetzanov/go/sqlite_visualizer/client/src/components/connection/ConnectionForm.tsx << 'EOF'
-import { FC, useState } from 'react';
-import { Connection } from '../../types';
-
-interface ConnectionFormProps {
-  onAddConnection: (connectionData: Omit<Connection, 'id'>) => Promise<void>;
-}
-
-/**
- * Connection Form Component
- * 
- * Form for creating new database connections
- */
-const ConnectionForm: FC<ConnectionFormProps> = ({ onAddConnection }) => {
-  const [name, setName] = useState('');
-  const [path, setPath] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!name || !path) {
-      setError('Name and path are required');
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Call the parent handler to add the connection
-      await onAddConnection({ name, path });
-      
-      // Reset form on success
       setName('');
       setPath('');
     } catch (err) {
