@@ -22,7 +22,12 @@ interface ApiError extends Error {
 // Base URL for API requests
 const API_URL = process.env.NODE_ENV === 'production' 
   ? '' // Same domain in production
-  : ''; // Empty string means it will use relative URLs, working with Vite proxy
+  : 'http://localhost:8765'; // Explicitly point to server in development
+
+console.log('API Service Initialized:', {
+  environment: process.env.NODE_ENV,
+  apiBaseUrl: API_URL
+});
 
 /**
  * Make an API request
@@ -72,12 +77,31 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
     
     return data;
   } catch (error: any) {
+    console.error('API request failed:', {
+      url,
+      method: config.method || 'GET',
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      }
+    });
+
     if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-      console.error('Network error - possibly CORS or server not running:', error);
-      throw new Error('Cannot connect to the server. Please make sure the server is running.');
+      const errorMsg = `Cannot connect to server at ${url}. Please ensure:
+      1. The server is running on port 8765
+      2. There are no CORS issues
+      3. The endpoint exists`;
+      console.error('Network error:', errorMsg);
+      throw new Error(errorMsg);
     }
-    console.error('API request failed:', error);
-    throw error;
+
+    // Handle API error responses
+    if (error.status) {
+      throw new Error(`API Error ${error.status}: ${error.message || 'Unknown error'}`);
+    }
+
+    throw new Error(error.message || 'Unknown API error');
   }
 }
 
@@ -329,10 +353,24 @@ export const exportApi = {
     `${API_URL}/api/export/csv/table/${connectionId}/${tableName}`,
 };
 
+// Test server connection
+export const testServerConnection = async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_URL}/api/health`);
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data?.status === 'ok';
+  } catch (error) {
+    console.error('Server connection test failed:', error);
+    return false;
+  }
+};
+
 export default {
   connectionApi,
   tableApi,
   visualizationApi,
   templateApi,
   exportApi,
+  testServerConnection,
 };
