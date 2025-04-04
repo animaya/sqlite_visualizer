@@ -33,11 +33,8 @@ async function createVisualization(visualizationData) {
       throw new Error('Visualization configuration is required');
     }
     
-    // Get database
-    const db = appDbService.getDb();
-    
-    // Insert visualization
-    const result = db.prepare(`
+    // Insert visualization using the appDbService run helper
+    const result = await appDbService.run(`
       INSERT INTO saved_visualizations (
         connection_id,
         name,
@@ -45,16 +42,16 @@ async function createVisualization(visualizationData) {
         config,
         table_name
       ) VALUES (?, ?, ?, ?, ?)
-    `).run(
+    `, [
       visualizationData.connectionId || null,
       visualizationData.name,
       visualizationData.type,
       JSON.stringify(visualizationData.config),
       visualizationData.tableName || null
-    );
+    ]);
     
     // Get the created visualization
-    const visualization = await getVisualizationById(result.lastInsertRowid);
+    const visualization = await getVisualizationById(result.lastID);
     
     return visualization;
   } catch (error) {
@@ -70,11 +67,8 @@ async function createVisualization(visualizationData) {
  */
 async function getAllVisualizations() {
   try {
-    // Get database
-    const db = appDbService.getDb();
-    
-    // Query all visualizations
-    const visualizations = db.prepare(`
+    // Query all visualizations using the appDbService all helper
+    const visualizations = await appDbService.all(`
       SELECT 
         id,
         connection_id,
@@ -86,18 +80,20 @@ async function getAllVisualizations() {
         updated_at
       FROM saved_visualizations
       ORDER BY updated_at DESC
-    `).all();
+    `);
     
     // Convert to camelCase and parse the JSON config for each visualization
     return visualizations.map(visualization => {
       // Parse config safely
       let parsedConfig = {};
       try {
-        if (visualization.config) {
+        if (visualization && visualization.config) {
           parsedConfig = JSON.parse(visualization.config);
         }
       } catch (err) {
-        console.error(`Failed to parse config for visualization ${visualization.id}:`, err);
+        // Make sure visualization is not null before accessing its id
+        const vizId = visualization ? visualization.id : 'unknown';
+        console.error(`Failed to parse config for visualization ${vizId}:`, err);
         // Use empty object if parsing fails
       }
       
@@ -126,11 +122,8 @@ async function getAllVisualizations() {
  */
 async function getVisualizationById(id) {
   try {
-    // Get database
-    const db = appDbService.getDb();
-    
-    // Query visualization by ID
-    const visualization = db.prepare(`
+    // Query visualization by ID using the appDbService get helper
+    const visualization = await appDbService.get(`
       SELECT 
         id,
         connection_id AS connectionId,
@@ -142,7 +135,7 @@ async function getVisualizationById(id) {
         updated_at AS updatedAt
       FROM saved_visualizations
       WHERE id = ?
-    `).get(id);
+    `, [id]);
     
     // If visualization not found
     if (!visualization) {
@@ -150,12 +143,14 @@ async function getVisualizationById(id) {
     }
     
     // Parse the JSON config safely
-    let parsedConfig;
+    let parsedConfig = {};
     try {
-      parsedConfig = visualization.config ? JSON.parse(visualization.config) : {};
+      if (visualization.config) {
+        parsedConfig = JSON.parse(visualization.config);
+      }
     } catch (err) {
       console.error(`Failed to parse config for visualization ${id}:`, err);
-      parsedConfig = {}; // Use empty object if parsing fails
+      // Use empty object if parsing fails
     }
     
     return {
@@ -180,11 +175,8 @@ async function updateVisualization(id, visualizationData) {
     // Check if visualization exists
     const existingViz = await getVisualizationById(id);
     
-    // Get database
-    const db = appDbService.getDb();
-    
     // Handle config update safely
-    let configString = existingViz.config;
+    let configString = existingViz.config ? JSON.stringify(existingViz.config) : '{}';
     if (visualizationData.config) {
       try {
         configString = JSON.stringify(visualizationData.config);
@@ -204,8 +196,8 @@ async function updateVisualization(id, visualizationData) {
       updated_at: new Date().toISOString()
     };
     
-    // Update visualization
-    db.prepare(`
+    // Update visualization using the appDbService run helper
+    await appDbService.run(`
       UPDATE saved_visualizations
       SET name = ?,
           type = ?,
@@ -214,7 +206,7 @@ async function updateVisualization(id, visualizationData) {
           connection_id = ?,
           updated_at = ?
       WHERE id = ?
-    `).run(
+    `, [
       updates.name,
       updates.type,
       updates.config,
@@ -222,7 +214,7 @@ async function updateVisualization(id, visualizationData) {
       updates.connection_id,
       updates.updated_at,
       id
-    );
+    ]);
     
     // Get the updated visualization
     return await getVisualizationById(id);
@@ -240,23 +232,20 @@ async function updateVisualization(id, visualizationData) {
  */
 async function deleteVisualization(id) {
   try {
-    // Get database
-    const db = appDbService.getDb();
-    
     // Check if visualization exists before attempting to delete
-    const vizExists = db.prepare(`
+    const vizExists = await appDbService.get(`
       SELECT 1 FROM saved_visualizations WHERE id = ?
-    `).get(id);
+    `, [id]);
     
     if (!vizExists) {
       throw new Error(`Visualization with ID ${id} not found`);
     }
     
-    // Delete visualization
-    const result = db.prepare(`
+    // Delete visualization using the appDbService run helper
+    const result = await appDbService.run(`
       DELETE FROM saved_visualizations
       WHERE id = ?
-    `).run(id);
+    `, [id]);
     
     // Return true if a row was deleted
     return result.changes > 0;
@@ -335,9 +324,6 @@ async function generateBarOrLineChartData(connectionId, tableName, mappings) {
     throw new Error('X-axis and Y-axis field mappings are required');
   }
   
-  // Get database connection
-  const connection = await databaseService.getConnection(connectionId);
-  
   // Build and execute query
   let query = `SELECT ${xField}, ${yField} FROM ${tableName}`;
   
@@ -386,9 +372,6 @@ async function generatePieChartData(connectionId, tableName, mappings) {
   if (!labelsField || !valuesField) {
     throw new Error('Labels and values field mappings are required');
   }
-  
-  // Get database connection
-  const connection = await databaseService.getConnection(connectionId);
   
   // Build and execute query
   let query = `SELECT ${labelsField}, ${valuesField} FROM ${tableName}`;
@@ -452,9 +435,6 @@ async function generateScatterChartData(connectionId, tableName, mappings) {
   
   // Get optional size field mapping
   const sizeField = mappings.size;
-  
-  // Get database connection
-  const connection = await databaseService.getConnection(connectionId);
   
   // Build and execute query
   let query = `SELECT ${xField}, ${yField}`;
