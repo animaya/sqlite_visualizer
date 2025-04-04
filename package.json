@@ -1,0 +1,28 @@
+{
+  "name": "sqlite-visualizer",
+  "version": "0.1.0",
+  "description": "A web application that visualizes SQLite database content for easy data exploration",
+  "main": "server/app.js",
+  "scripts": {
+    "start": "node server/app.js",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "nodemon server/app.js",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "setup-db": "node scripts/setup-db.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^8.5.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "helmet": "^7.0.0",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "nodemon": "^3.0.1"
+  }
+}
