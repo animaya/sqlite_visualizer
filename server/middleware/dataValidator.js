@@ -1,17 +1,31 @@
 /**
  * Data Validator Middleware
  * 
- * Validates request data against schemas
+ * Validates request data against Joi schemas
  */
+
+const Joi = require('joi');
 
 /**
  * Validate request body against a schema
- * @param {Object} schema - Validation schema
+ * @param {Object} schema - Joi validation schema
+ * @returns {Function} Express middleware function
  */
 function validateBody(schema) {
   return (req, res, next) => {
-    // TODO: Implement request body validation
-    const { error } = { error: null }; // Replace with actual validation
+    if (!schema) {
+      return next();
+    }
+
+    const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      errors: {
+        wrap: {
+          label: ''
+        }
+      }
+    });
     
     if (error) {
       return res.status(400).json({
@@ -21,18 +35,32 @@ function validateBody(schema) {
       });
     }
     
+    // Replace request body with validated and sanitized data
+    req.body = value;
     next();
   };
 }
 
 /**
  * Validate request query parameters against a schema
- * @param {Object} schema - Validation schema
+ * @param {Object} schema - Joi validation schema
+ * @returns {Function} Express middleware function
  */
 function validateQuery(schema) {
   return (req, res, next) => {
-    // TODO: Implement query parameter validation
-    const { error } = { error: null }; // Replace with actual validation
+    if (!schema) {
+      return next();
+    }
+
+    const { error, value } = schema.validate(req.query, {
+      abortEarly: false,
+      stripUnknown: true,
+      errors: {
+        wrap: {
+          label: ''
+        }
+      }
+    });
     
     if (error) {
       return res.status(400).json({
@@ -42,18 +70,32 @@ function validateQuery(schema) {
       });
     }
     
+    // Replace request query with validated and sanitized data
+    req.query = value;
     next();
   };
 }
 
 /**
  * Validate request parameters against a schema
- * @param {Object} schema - Validation schema
+ * @param {Object} schema - Joi validation schema
+ * @returns {Function} Express middleware function
  */
 function validateParams(schema) {
   return (req, res, next) => {
-    // TODO: Implement path parameter validation
-    const { error } = { error: null }; // Replace with actual validation
+    if (!schema) {
+      return next();
+    }
+
+    const { error, value } = schema.validate(req.params, {
+      abortEarly: false,
+      stripUnknown: false, // Don't strip unknown for route params
+      errors: {
+        wrap: {
+          label: ''
+        }
+      }
+    });
     
     if (error) {
       return res.status(400).json({
@@ -63,12 +105,138 @@ function validateParams(schema) {
       });
     }
     
+    // Replace request params with validated data
+    req.params = value;
     next();
   };
 }
 
+/**
+ * Create validation schemas for common data patterns
+ */
+const schemas = {
+  // Database connection schemas
+  connection: {
+    create: Joi.object({
+      name: Joi.string().trim().min(1).max(100).required()
+        .messages({
+          'string.empty': 'Connection name is required',
+          'string.min': 'Connection name must be at least 1 character long',
+          'string.max': 'Connection name cannot exceed 100 characters'
+        }),
+      path: Joi.string().trim().min(1).required()
+        .messages({
+          'string.empty': 'Database path is required'
+        })
+    }),
+    
+    id: Joi.object({
+      id: Joi.number().integer().positive().required()
+        .messages({
+          'number.base': 'Connection ID must be a number',
+          'number.integer': 'Connection ID must be an integer',
+          'number.positive': 'Connection ID must be positive'
+        })
+    })
+  },
+  
+  // Visualization schemas
+  visualization: {
+    create: Joi.object({
+      connection_id: Joi.number().integer().positive().required()
+        .messages({
+          'number.base': 'Connection ID must be a number',
+          'number.integer': 'Connection ID must be an integer',
+          'number.positive': 'Connection ID must be positive'
+        }),
+      name: Joi.string().trim().min(1).max(100).required()
+        .messages({
+          'string.empty': 'Visualization name is required',
+          'string.min': 'Visualization name must be at least 1 character long',
+          'string.max': 'Visualization name cannot exceed 100 characters'
+        }),
+      type: Joi.string().valid('bar', 'pie', 'line', 'scatter', 'area').required()
+        .messages({
+          'any.only': 'Visualization type must be one of: bar, pie, line, scatter, area'
+        }),
+      config: Joi.object().required()
+        .messages({
+          'object.base': 'Chart configuration must be a valid object'
+        }),
+      table_name: Joi.string().trim().min(1).required()
+        .messages({
+          'string.empty': 'Table name is required'
+        })
+    }),
+    
+    id: Joi.object({
+      id: Joi.number().integer().positive().required()
+        .messages({
+          'number.base': 'Visualization ID must be a number',
+          'number.integer': 'Visualization ID must be an integer',
+          'number.positive': 'Visualization ID must be positive'
+        })
+    }),
+    
+    update: Joi.object({
+      name: Joi.string().trim().min(1).max(100)
+        .messages({
+          'string.empty': 'Visualization name cannot be empty',
+          'string.min': 'Visualization name must be at least 1 character long',
+          'string.max': 'Visualization name cannot exceed 100 characters'
+        }),
+      type: Joi.string().valid('bar', 'pie', 'line', 'scatter', 'area')
+        .messages({
+          'any.only': 'Visualization type must be one of: bar, pie, line, scatter, area'
+        }),
+      config: Joi.object()
+        .messages({
+          'object.base': 'Chart configuration must be a valid object'
+        })
+    }).min(1).messages({
+      'object.min': 'At least one field must be provided for update'
+    })
+  },
+  
+  // Table data schemas
+  table: {
+    query: Joi.object({
+      page: Joi.number().integer().min(1).default(1)
+        .messages({
+          'number.base': 'Page must be a number',
+          'number.integer': 'Page must be an integer',
+          'number.min': 'Page must be at least 1'
+        }),
+      limit: Joi.number().integer().min(1).max(1000).default(100)
+        .messages({
+          'number.base': 'Limit must be a number',
+          'number.integer': 'Limit must be an integer',
+          'number.min': 'Limit must be at least 1',
+          'number.max': 'Limit cannot exceed 1000'
+        }),
+      sort: Joi.string().pattern(/^[\w]+$/, { name: 'column name' })
+        .messages({
+          'string.pattern.name': 'Sort column must contain only alphanumeric characters and underscores'
+        }),
+      order: Joi.string().valid('asc', 'desc').default('asc')
+        .messages({
+          'any.only': 'Order must be either "asc" or "desc"'
+        }),
+      filter: Joi.string()
+    })
+  },
+  
+  // Export schemas
+  export: {
+    csv: Joi.object({
+      format: Joi.string().valid('csv').default('csv')
+    })
+  }
+};
+
 module.exports = {
   validateBody,
   validateQuery,
-  validateParams
+  validateParams,
+  schemas
 };
