@@ -2,4 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom base styles can be added here */
+/* Base styles from design system */
+@layer base {
+  :root {
+    --chart-height-sm: 200px;
+    --chart-height-md: 300px;
+    --chart-height-lg: 400px;
+    
+    --transition-duration-default: 150ms;
+    --transition-duration-long: 300ms;
+    
+    --shadow-color: 215 25% 27%;
+  }
+
+  html {
+    @apply text-slate-900;
+  }
+
+  body {
+    @apply bg-slate-50;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-medium;
+  }
+}
+
+/* Component styles */
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 transition-colors font-medium text-sm;
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-2 bg-white text-slate-900 border border-slate-300 rounded hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 transition-colors font-medium text-sm;
+  }
+  
+  .btn-tertiary {
+    @apply px-3 py-1.5 text-primary rounded hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 transition-colors font-medium text-sm;
+  }
+  
+  .form-input {
+    @apply w-full px-3 py-2 border border-slate-300 rounded-sm text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary;
+  }
+  
+  .card {
+    @apply bg-white border border-slate-200 rounded p-4 shadow-sm;
+  }
+  
+  .card-interactive {
+    @apply bg-white border border-slate-200 rounded p-4 shadow-sm hover:shadow transition-shadow;
+  }
+  
+  .tab-active {
+    @apply py-3 border-b-2 border-primary font-medium text-sm text-primary;
+  }
+  
+  .tab-inactive {
+    @apply py-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 hover:border-slate-300;
+  }
+}
+
+/* Chart.js global styles */
+.chart-container {
+  position: relative;
+  height: var(--chart-height-md);
+  width: 100%;
+}
+
+/* Hover effects for interactive elements */
+.hover-transition {
+  @apply transition-colors duration-150 ease-in-out;
+}
+
+/* Modal/dialog transitions */
+.modal-transition {
+  @apply transition-opacity duration-300 ease-in-out;
+}
+
+/* Expanding elements transitions */
+.expand-transition {
+  @apply transition-all duration-300 ease-out;
+}

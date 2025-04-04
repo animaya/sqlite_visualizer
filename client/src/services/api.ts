@@ -217,22 +217,27 @@ export const visualizationApi = {
    * @param limit - Max number of records to return (default: 20)
    */
   getSampleData: <T>(connectionId: string | number, tableName: string, mappings: Record<string, string>, limit: number = 20): Promise<T[]> => {
-    // Create query params for field selection
-    const fields = Object.values(mappings).filter(Boolean);
-    
-    // Define fields if they exist
-    const params: Record<string, any> = { limit };
-    if (fields.length > 0) {
-      params.fields = fields.join(',');
+    try {
+      // Create query params for field selection
+      const fields = Object.values(mappings).filter(Boolean);
+      
+      // Define fields if they exist
+      const params: Record<string, any> = { limit };
+      if (fields.length > 0) {
+        params.fields = fields.join(',');
+      }
+      
+      // Use a simpler approach - just get sample data and return empty array on error
+      return tableApi.getSample<T>(connectionId, tableName, limit)
+        .then(response => response.data)
+        .catch(error => {
+          console.error('Error fetching sample data:', error);
+          return [] as T[];
+        });
+    } catch (error) {
+      console.error('Error in getSampleData:', error);
+      return Promise.resolve([] as T[]);
     }
-    
-    return tableApi.getSample<T>(connectionId, tableName, limit)
-      .then(response => response.data)
-      .catch(error => {
-        console.error('Error fetching sample data:', error);
-        // Return empty array on error to prevent UI from breaking
-        return [] as T[];
-      });
   },
   
   /**
@@ -246,28 +251,35 @@ export const visualizationApi = {
     data: T[];
     total: number;
   }> => {
-    // Create query params for field selection and pagination
-    const fields = Object.values(mappings).filter(Boolean);
-    
-    // Define query parameters
-    const params: Record<string, any> = { limit, page: 1 };
-    if (fields.length > 0) {
-      params.fields = fields.join(',');
-    }
-    
-    return tableApi.getData<T>(connectionId, tableName, params)
-      .then(response => ({
-        data: response.data,
-        total: response.total
-      }))
-      .catch(error => {
-        console.error('Error fetching full data:', error);
-        // Return empty data on error to prevent UI from breaking
-        return {
-          data: [] as T[],
-          total: 0
-        };
+    try {
+      // Create query params for field selection and pagination
+      const fields = Object.values(mappings).filter(Boolean);
+      
+      // Define query parameters
+      const params: Record<string, any> = { limit, page: 1 };
+      if (fields.length > 0) {
+        params.fields = fields.join(',');
+      }
+      
+      return tableApi.getData<T>(connectionId, tableName, params)
+        .then(response => ({
+          data: response.data,
+          total: response.total
+        }))
+        .catch(error => {
+          console.error('Error fetching full data:', error);
+          return {
+            data: [] as T[],
+            total: 0
+          };
+        });
+    } catch (error) {
+      console.error('Error in getFullData:', error);
+      return Promise.resolve({
+        data: [] as T[],
+        total: 0
       });
+    }
   }
 };
 
