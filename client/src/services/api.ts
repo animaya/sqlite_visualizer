@@ -258,13 +258,13 @@ export const visualizationApi = {
   getById: (id: string | number): Promise<Visualization> => 
     apiRequest<Visualization>(`/visualizations/${id}`),
   
-  create: (visualizationData: Omit<Visualization, 'id' | 'created_at' | 'updated_at'>): Promise<Visualization> => 
+  create: (visualizationData: Omit<Visualization, 'id' | 'createdAt' | 'updatedAt'>): Promise<Visualization> => 
     apiRequest<Visualization>('/visualizations', {
       method: 'POST',
       body: JSON.stringify(visualizationData),
     }),
   
-  update: (id: string | number, visualizationData: Partial<Omit<Visualization, 'id' | 'created_at' | 'updated_at'>>): Promise<Visualization> => 
+  update: (id: string | number, visualizationData: Partial<Omit<Visualization, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Visualization> => 
     apiRequest<Visualization>(`/visualizations/${id}`, {
       method: 'PUT',
       body: JSON.stringify(visualizationData),
@@ -351,23 +351,75 @@ export const visualizationApi = {
 
 // Template endpoints
 export const templateApi = {
-  getAll: (): Promise<Template[]> => 
-    apiRequest<Template[]>('/templates'),
+  getAll: (filters?: Record<string, any>): Promise<Template[]> => {
+    const queryParams = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    
+    const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    return apiRequest<Template[]>(`/templates${queryString}`);
+  },
   
   getById: (id: string | number): Promise<Template> => 
     apiRequest<Template>(`/templates/${id}`),
   
+  getRequirements: (id: string | number): Promise<{
+    requiredFields: {name: string, label: string}[];
+    optionalFields: {name: string, label: string}[];
+    templateInfo: {
+      name: string;
+      description?: string;
+      type: string;
+      category?: string;
+    };
+  }> => 
+    apiRequest<{
+      requiredFields: {name: string, label: string}[];
+      optionalFields: {name: string, label: string}[];
+      templateInfo: {
+        name: string;
+        description?: string;
+        type: string;
+        category?: string;
+      };
+    }>(`/templates/${id}/requirements`),
+  
+  getCategories: (): Promise<string[]> => 
+    apiRequest<string[]>('/templates/categories'),
+  
+  create: (templateData: Omit<Template, 'id'>): Promise<Template> => 
+    apiRequest<Template>('/templates', {
+      method: 'POST',
+      body: JSON.stringify(templateData),
+    }),
+  
+  update: (id: string | number, templateData: Partial<Omit<Template, 'id'>>): Promise<Template> => 
+    apiRequest<Template>(`/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(templateData),
+    }),
+  
+  delete: (id: string | number): Promise<void> => 
+    apiRequest<void>(`/templates/${id}`, {
+      method: 'DELETE',
+    }),
+  
   apply: (templateId: string | number, applicationData: {
-    connectionId: number;
-    tableNames: string[];
+    connectionId: number | string;
+    tableNames: string | string[];
     mappings: Record<string, string>;
   }): Promise<{
-    data: any[];
+    data: any;
     config: Record<string, any>;
     type: string;
   }> => 
     apiRequest<{
-      data: any[];
+      data: any;
       config: Record<string, any>;
       type: string;
     }>(`/templates/${templateId}/apply`, {
