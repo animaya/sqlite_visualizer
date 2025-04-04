@@ -154,12 +154,27 @@ function ConnectionList({
   // Show empty state
   if (connections.length === 0) {
     return (
-      <div className="card text-center p-8">
-        <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-4">
-          <Database className="h-6 w-6 text-slate-400" />
+      <div className="card text-center p-12 border-2 border-dashed border-slate-200">
+        <div className="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">
+          <Database className="h-8 w-8 text-slate-400" />
         </div>
-        <h3 className="text-base font-medium text-slate-900 mb-1">No connections yet</h3>
-        <p className="text-sm text-slate-500 mb-4">Add your first database connection to get started.</p>
+        <h3 className="text-lg font-medium text-slate-900 mb-2">No database connections</h3>
+        <p className="text-sm text-slate-500 mb-6">
+          Connect to your first SQLite database to get started
+        </p>
+        <div className="flex flex-col items-center space-y-3">
+          <p className="text-xs text-slate-400">
+            Supported file types: .sqlite, .db, .sqlite3
+          </p>
+          <div className="flex space-x-2">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
+              SQLite 3
+            </span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
+              Read-only
+            </span>
+          </div>
+        </div>
       </div>
     );
   }
