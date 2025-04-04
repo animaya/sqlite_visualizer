@@ -22,7 +22,7 @@ const exportRoutes = require('./routes/export');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8765;
 
 // Middleware
 app.use(cors());
