@@ -22,7 +22,7 @@ interface ApiError extends Error {
 // Base URL for API requests
 const API_URL = process.env.NODE_ENV === 'production' 
   ? '' // Same domain in production
-  : 'http://localhost:3000'; // Dev server
+  : 'http://localhost:3001'; // Dev server
 
 /**
  * Make an API request
