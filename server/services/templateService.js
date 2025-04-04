@@ -15,7 +15,7 @@ const templateModel = require('../models/template');
  */
 async function getAllTemplates(filters = {}) {
   try {
-    return templateModel.findAll(filters);
+    return await templateModel.findAll(filters);
   } catch (error) {
     console.error('Failed to get all templates:', error);
     throw error;
@@ -29,7 +29,7 @@ async function getAllTemplates(filters = {}) {
  */
 async function getTemplateById(id) {
   try {
-    const template = templateModel.findById(id);
+    const template = await templateModel.findById(id);
     return template;
   } catch (error) {
     console.error(`Failed to get template ${id}:`, error);
@@ -44,7 +44,7 @@ async function getTemplateById(id) {
  */
 async function createTemplate(templateData) {
   try {
-    return templateModel.create(templateData);
+    return await templateModel.create(templateData);
   } catch (error) {
     console.error('Failed to create template:', error);
     throw error;
@@ -59,7 +59,7 @@ async function createTemplate(templateData) {
  */
 async function updateTemplate(id, templateData) {
   try {
-    return templateModel.update(id, templateData);
+    return await templateModel.update(id, templateData);
   } catch (error) {
     console.error(`Failed to update template ${id}:`, error);
     throw error;
@@ -73,7 +73,7 @@ async function updateTemplate(id, templateData) {
  */
 async function deleteTemplate(id) {
   try {
-    return templateModel.remove(id);
+    return await templateModel.remove(id);
   } catch (error) {
     console.error(`Failed to delete template ${id}:`, error);
     throw error;
@@ -118,11 +118,9 @@ async function applyTemplate(templateId, connectionId, tableNames, mappings) {
     
     // Generate data based on template type and config
     let data;
-    let labels;
-    let datasets;
     
     // Different query logic based on chart type
-    switch (template.type) {
+    switch (template.type.toLowerCase()) {
       case 'bar':
       case 'line':
         // For bar and line charts, we need to fetch data for the x and y axes
@@ -279,18 +277,21 @@ async function getTemplateRequirements(templateId) {
     const requiredFields = [];
     const optionalFields = [];
     
-    switch (template.type) {
+    switch (template.type.toLowerCase()) {
       case 'bar':
       case 'line':
-        requiredFields.push({ name: 'x', label: 'X-Axis' });
-        requiredFields.push({ name: 'y', label: 'Y-Axis' });
+        requiredFields.push({ name: 'x', label: 'X-Axis (Categories)' });
+        requiredFields.push({ name: 'y', label: 'Y-Axis (Values)' });
         optionalFields.push({ name: 'groupBy', label: 'Group By' });
+        optionalFields.push({ name: 'sort', label: 'Sort Direction' });
+        optionalFields.push({ name: 'limit', label: 'Result Limit' });
         break;
         
       case 'pie':
       case 'doughnut':
-        requiredFields.push({ name: 'labels', label: 'Labels' });
-        requiredFields.push({ name: 'values', label: 'Values' });
+        requiredFields.push({ name: 'labels', label: 'Labels (Categories)' });
+        requiredFields.push({ name: 'values', label: 'Values (Sizes)' });
+        optionalFields.push({ name: 'limit', label: 'Result Limit' });
         break;
         
       default:
@@ -299,10 +300,37 @@ async function getTemplateRequirements(templateId) {
     
     return {
       requiredFields,
-      optionalFields
+      optionalFields,
+      templateInfo: {
+        name: template.name,
+        description: template.description,
+        type: template.type,
+        category: template.category
+      }
     };
   } catch (error) {
     console.error(`Failed to get template requirements for ${templateId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get all available template categories
+ * @returns {Promise<Array>} - Array of unique category names
+ */
+async function getTemplateCategories() {
+  try {
+    const templates = await getAllTemplates();
+    
+    // Extract unique categories
+    const categories = [...new Set(templates
+      .map(template => template.category)
+      .filter(Boolean)
+    )];
+    
+    return categories;
+  } catch (error) {
+    console.error('Failed to get template categories:', error);
     throw error;
   }
 }
@@ -327,7 +355,7 @@ function generateChartColors(count) {
     '#84CC16'  // lime-500
   ];
   
-  // If we need more colors than we have, cycle through them with different opacities
+  // If we need more colors than we have, cycle through them
   const colors = [];
   for (let i = 0; i < count; i++) {
     const baseColor = baseColors[i % baseColors.length];
@@ -340,6 +368,10 @@ function generateChartColors(count) {
 module.exports = {
   getAllTemplates,
   getTemplateById,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
   applyTemplate,
-  getTemplateRequirements
+  getTemplateRequirements,
+  getTemplateCategories
 };
