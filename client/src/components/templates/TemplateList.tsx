@@ -1,5 +1,6 @@
 import { FC } from 'react';
 import { Template } from '../../types';
+import TemplateCard from './TemplateCard';
 
 interface TemplateListProps {
   templates: Template[];
@@ -60,34 +61,13 @@ const TemplateList: FC<TemplateListProps> = ({
           <h2 className="text-xl font-medium text-slate-900 mb-4 capitalize">{category}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {groupedTemplates[category].map(template => (
-              <div key={template.id} className="bg-white p-6 rounded-md border border-slate-200 shadow-sm hover:shadow transition-shadow">
-                <h3 className="text-lg font-medium text-slate-900 mb-1">{template.name}</h3>
-                <p className="text-sm text-slate-500 mb-4">
-                  {template.description || 'No description available'}
-                </p>
-                <div className="text-xs text-slate-500 mb-4 flex flex-wrap gap-2">
-                  <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 rounded">
-                    {template.type} Chart
-                  </span>
-                  {template.category && (
-                    <span className="inline-block px-2 py-1 bg-green-50 text-green-700 rounded capitalize">
-                      {template.category}
-                    </span>
-                  )}
-                  {template.isDefault && (
-                    <span className="inline-block px-2 py-1 bg-amber-50 text-amber-700 rounded">
-                      Built-in
-                    </span>
-                  )}
-                </div>
-                <button 
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!selectedConnectionId}
-                  onClick={() => onApplyTemplate(template.id)}
-                >
-                  Apply Template
-                </button>
-              </div>
+              <TemplateCard 
+                key={template.id}
+                template={template}
+                connectionId={selectedConnectionId}
+                onApply={onApplyTemplate}
+              />
+=======
             ))}
           </div>
         </div>

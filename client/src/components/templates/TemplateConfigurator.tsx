@@ -2,7 +2,8 @@ import { FC, useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Template, Connection, TableInfo, ColumnInfo, ChartData } from '../../types';
 import { templateApi, connectionApi, tableApi } from '../../services/api';
-import ChartPreview from '../visualization/ChartPreview';
+import { TemplateFieldMapper } from './index';
+import TemplatePreview from './TemplatePreview';
 
 interface TemplateConfiguratorProps {
   onBack?: () => void;
@@ -370,97 +371,74 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
             <h3 className="text-md font-medium text-slate-800">Required Field Mappings</h3>
             
             {requiredFields.map((field) => (
-              <div key={field.name} className="mb-4">
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {field.label}
-                </label>
-                <select 
-                  className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
-                  value={mappings[field.name] || ''}
-                  onChange={(e) => handleMappingChange(field.name, e.target.value)}
-                  disabled={columns.length === 0}
-                >
-                  <option value="">Select a column</option>
-                  {columns.length > 0 && (
-                    <>
-                      {/* Group numeric columns for value fields */}
-                      {(field.name === 'y' || field.name === 'values') && (
-                        <optgroup label="Numeric Columns (Recommended)">
-                          {columns.filter(col => col.isNumeric).map(col => (
-                            <option key={col.name} value={col.name}>{col.name}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                      
-                      {/* Group text columns for label fields */}
-                      {(field.name === 'x' || field.name === 'labels') && (
-                        <optgroup label="Text Columns (Recommended)">
-                          {columns.filter(col => col.isText).map(col => (
-                            <option key={col.name} value={col.name}>{col.name}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                      
-                      {/* Show all columns as a fallback */}
-                      <optgroup label="All Columns">
-                        {columns.map(col => (
-                          <option key={col.name} value={col.name}>{col.name}</option>
-                        ))}
-                      </optgroup>
-                    </>
-                  )}
-                </select>
-              </div>
+              <TemplateFieldMapper
+                key={field.name}
+                field={{...field, required: true}}
+                columns={columns}
+                value={mappings[field.name] || ''}
+                onChange={handleMappingChange}
+                disabled={columns.length === 0}
+                className="mb-4"
+              />
             ))}
             
             {optionalFields.length > 0 && (
               <>
                 <h3 className="text-md font-medium text-slate-800 mt-6">Optional Field Mappings</h3>
                 
-                {optionalFields.map((field) => (
-                  <div key={field.name} className="mb-4">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      {field.label}
-                    </label>
-                    
-                    {field.name === 'sort' ? (
-                      <select 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+                {optionalFields.map((field) => {
+                  // For special fields like sort and limit, create custom components
+                  if (field.name === 'sort') {
+                    return (
+                      <div key={field.name} className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {field.label}
+                        </label>
+                        <select 
+                          className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+                          value={mappings[field.name] || ''}
+                          onChange={(e) => handleMappingChange(field.name, e.target.value)}
+                        >
+                          <option value="">No sorting</option>
+                          <option value="asc">Ascending</option>
+                          <option value="desc">Descending</option>
+                        </select>
+                      </div>
+                    );
+                  } else if (field.name === 'limit') {
+                    return (
+                      <div key={field.name} className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {field.label}
+                        </label>
+                        <select 
+                          className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+                          value={mappings[field.name] || ''}
+                          onChange={(e) => handleMappingChange(field.name, e.target.value)}
+                        >
+                          <option value="">Default (10)</option>
+                          <option value="5">5 results</option>
+                          <option value="10">10 results</option>
+                          <option value="20">20 results</option>
+                          <option value="50">50 results</option>
+                          <option value="100">100 results</option>
+                        </select>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <TemplateFieldMapper
+                        key={field.name}
+                        field={field}
+                        columns={columns}
                         value={mappings[field.name] || ''}
-                        onChange={(e) => handleMappingChange(field.name, e.target.value)}
-                      >
-                        <option value="">No sorting</option>
-                        <option value="asc">Ascending</option>
-                        <option value="desc">Descending</option>
-                      </select>
-                    ) : field.name === 'limit' ? (
-                      <select 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
-                        value={mappings[field.name] || ''}
-                        onChange={(e) => handleMappingChange(field.name, e.target.value)}
-                      >
-                        <option value="">Default (10)</option>
-                        <option value="5">5 results</option>
-                        <option value="10">10 results</option>
-                        <option value="20">20 results</option>
-                        <option value="50">50 results</option>
-                        <option value="100">100 results</option>
-                      </select>
-                    ) : (
-                      <select 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
-                        value={mappings[field.name] || ''}
-                        onChange={(e) => handleMappingChange(field.name, e.target.value)}
+                        onChange={handleMappingChange}
                         disabled={columns.length === 0}
-                      >
-                        <option value="">None</option>
-                        {columns.map(col => (
-                          <option key={col.name} value={col.name}>{col.name}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                ))}
+                        className="mb-4"
+                      />
+                    );
+                  }
+                })}
               </>
             )}
           </div>
@@ -485,35 +463,18 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
         <div className="bg-white p-6 rounded-md border border-slate-200">
           <h2 className="text-lg font-medium text-slate-900 mb-4">Preview</h2>
           
-          {previewLoading ? (
-            <div className="h-64 flex items-center justify-center">
-              <p className="text-slate-500">Generating preview...</p>
-            </div>
-          ) : previewData ? (
-            <div>
-              <div className="h-64">
-                <ChartPreview 
-                  type={template.type}
-                  data={previewData}
-                  options={{
-                    title: template.name,
-                    responsive: true,
-                    maintainAspectRatio: false
-                  }}
-                />
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                This is a preview with limited data. Apply the template to see the full visualization.
-              </p>
-            </div>
-          ) : (
-            <div className="h-64 flex items-center justify-center">
-              <p className="text-slate-500">
-                {columns.length === 0 ? 
-                  'Select a table to see a preview' :
-                  'Map all required fields to see a preview'}
-              </p>
-            </div>
+          {template && (
+            <TemplatePreview
+              template={template}
+              previewData={previewData}
+              isLoading={previewLoading}
+              error={
+                columns.length === 0 ? null :
+                requiredFields.some(field => !mappings[field.name]) ? 
+                'Map all required fields to see a preview' : 
+                error
+              }
+            />
           )}
         </div>
       </div>
