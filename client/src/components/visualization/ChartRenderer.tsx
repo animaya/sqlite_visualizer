@@ -4,12 +4,12 @@ import {
   BarChart, 
   PieChart, 
   LineChart, 
-  ScatterPlot, 
+  ScatterChart, 
   Loader2, 
   Download, 
   RotateCcw, 
-  MaximizeIcon, 
-  MinimizeIcon
+  Maximize, 
+  Minimize
 } from 'lucide-react';
 
 // Define types for chart data
@@ -94,7 +94,7 @@ function ChartRenderer({
       case 'doughnut':
         return <PieChart className="w-5 h-5 text-slate-500" />;
       case 'scatter':
-        return <ScatterPlot className="w-5 h-5 text-slate-500" />;
+        return <ScatterChart className="w-5 h-5 text-slate-500" />;
       default:
         return <BarChart className="w-5 h-5 text-slate-500" />;
     }
@@ -443,7 +443,7 @@ function ChartRenderer({
               className="p-2 text-slate-500 rounded hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 transition-colors"
               title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             >
-              {isFullscreen ? <MinimizeIcon className="w-4 h-4" /> : <MaximizeIcon className="w-4 h-4" />}
+              {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
             </button>
           )}
         </div>
