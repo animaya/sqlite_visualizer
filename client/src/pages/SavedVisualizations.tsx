@@ -21,16 +21,26 @@ const SavedVisualizations: FC = () => {
         setLoading(true);
         const data = await visualizationApi.getAll();
         // Transform the API data to match the expected Visualization type
-        const formattedData: Visualization[] = data.map(item => ({
-          id: item.id,
-          name: item.name,
-          type: item.type,
-          connectionId: item.connection_id || 0,
-          tableName: item.table_name || '',
-          config: typeof item.config === 'string' ? JSON.parse(item.config) : item.config,
-          createdAt: item.created_at,
-          updatedAt: item.updated_at
-        }));
+        const formattedData: Visualization[] = data.map(item => {
+          // Handle config safely
+          let config = {};
+          try {
+            config = typeof item.config === 'string' ? JSON.parse(item.config) : (item.config || {});
+          } catch (parseError) {
+            console.error(`Error parsing config for visualization ${item.id}:`, parseError);
+          }
+          
+          return {
+            id: item.id,
+            name: item.name,
+            type: item.type,
+            connectionId: item.connectionId || item.connection_id || 0,
+            tableName: item.tableName || item.table_name || '',
+            config,
+            createdAt: item.createdAt || item.created_at,
+            updatedAt: item.updatedAt || item.updated_at
+          };
+        });
         setVisualizations(formattedData);
         setError(null);
       } catch (err) {
