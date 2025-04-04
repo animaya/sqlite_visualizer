@@ -77,14 +77,38 @@ const findAvailablePort = async (startPort) => {
 };
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if(!origin) return callback(null, true);
+    return callback(null, true); // Allow all origins in development
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
+
+// Add additional debugging for requests
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log('Request body:', JSON.stringify(req.body));
+  }
+  next();
+});
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Add a simple health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // API Routes
 app.use('/api/connections', connectionsRoutes);

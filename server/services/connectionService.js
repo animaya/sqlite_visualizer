@@ -42,47 +42,101 @@ async function createConnection(connectionData) {
     
     // Validate connection parameters
     if (!connectionData.name) {
-      throw new Error('Connection name is required');
+      const error = new Error('Connection name is required');
+      error.statusCode = 400;
+      throw error;
     }
     
     if (!connectionData.path) {
-      throw new Error('Database path is required');
+      const error = new Error('Database path is required');
+      error.statusCode = 400;
+      throw error;
     }
     
+    // Normalize path to handle any OS-specific issues
+    const normalizedPath = path.normalize(connectionData.path);
+    console.log("Normalized path:", normalizedPath);
+    
     // Check that the file exists
-    if (!fs.existsSync(connectionData.path)) {
-      throw new Error(`Database file not found at path: ${connectionData.path}`);
+    try {
+      const fileStats = fs.statSync(normalizedPath);
+      if (!fileStats.isFile()) {
+        const error = new Error(`Path exists but is not a file: ${normalizedPath}`);
+        error.statusCode = 400;
+        throw error;
+      }
+      console.log("File stats:", {
+        size: fileStats.size,
+        isFile: fileStats.isFile(),
+        path: normalizedPath
+      });
+    } catch (fsError) {
+      console.error("File system error:", fsError);
+      if (fsError.code === 'ENOENT') {
+        const error = new Error(`Database file not found at path: ${normalizedPath}`);
+        error.statusCode = 404;
+        error.code = 'ENOENT';
+        error.path = normalizedPath;
+        throw error;
+      }
+      // Rethrow with more context
+      const error = new Error(`Error accessing database file: ${fsError.message}`);
+      error.statusCode = 400;
+      error.originalError = fsError;
+      throw error;
     }
     
     // Validate that the file is a valid SQLite database
-    const isValid = await dbUtils.validateDatabase(connectionData.path);
+    console.log("Validating SQLite database...");
+    const isValid = await dbUtils.validateDatabase(normalizedPath);
     if (!isValid) {
-      throw new Error('Invalid SQLite database file');
+      const error = new Error(`Invalid SQLite database file: ${normalizedPath}`);
+      error.statusCode = 400;
+      throw error;
     }
     
     // Get database size and table count
-    const sizeBytes = dbUtils.getDatabaseSize(connectionData.path);
+    const sizeBytes = dbUtils.getDatabaseSize(normalizedPath);
     
     // Create a temporary connection to get table count
-    const tempDb = new sqlite3.Database(connectionData.path, sqlite3.OPEN_READONLY);
-    const tableCount = await dbUtils.getTableCount(tempDb);
-    
-    // Close the temporary connection
-    tempDb.close();
-    
-    // Save connection to database
-    const newConnection = await connectionModel.create({
-      name: connectionData.name,
-      path: connectionData.path,
-      size_bytes: sizeBytes,
-      table_count: tableCount,
-      is_valid: true,
-      last_accessed: new Date().toISOString()
-    });
-    
-    return newConnection;
+    console.log("Getting table count...");
+    let tempDb;
+    try {
+      tempDb = new sqlite3.Database(normalizedPath, sqlite3.OPEN_READONLY);
+      const tableCount = await dbUtils.getTableCount(tempDb);
+      
+      // Close the temporary connection
+      tempDb.close();
+      
+      // Save connection to database
+      console.log("Saving connection to app database...");
+      const newConnection = await connectionModel.create({
+        name: connectionData.name,
+        path: normalizedPath,
+        size_bytes: sizeBytes,
+        table_count: tableCount,
+        is_valid: true,
+        last_accessed: new Date().toISOString()
+      });
+      
+      console.log("Connection created successfully:", newConnection);
+      return newConnection;
+    } catch (dbError) {
+      if (tempDb) {
+        tempDb.close();
+      }
+      console.error("Database error during connection creation:", dbError);
+      const error = new Error(`Database error: ${dbError.message}`);
+      error.statusCode = 400;
+      error.originalError = dbError;
+      throw error;
+    }
   } catch (error) {
     console.error('Error creating connection:', error);
+    // Ensure the error has a status code
+    if (!error.statusCode) {
+      error.statusCode = 500;
+    }
     throw error;
   }
 }

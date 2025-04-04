@@ -3,26 +3,54 @@
  * 
  * Handles all API requests to the backend
  */
+import { Connection, Visualization, Template, ApiError } from '../types';
 
-// TypeScript interfaces
-interface Connection {
-  id: number;
-  name: string;
-  path: string;
-  last_accessed: string;
-  size_bytes?: number;
-  table_count?: number;
-  is_valid: boolean;
-}
-
-interface ApiError extends Error {
-  status?: number;
-}
+// Detect server port from environment or fallback to default
+const getServerPort = () => {
+  // In development, read from window.location if available
+  if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
+    const url = new URL(window.location.href);
+    
+    // If running in standard Vite dev mode, server is at 8765 by default
+    if (url.port === '5173' || url.port === '5174') {
+      return 8765;
+    }
+    
+    // If running in a different development setup, try to calculate the server port
+    const clientPort = parseInt(url.port);
+    if (!isNaN(clientPort) && clientPort > 1000) {
+      return clientPort - 1000 + 8765; 
+    }
+  }
+  
+  // Default fallback ports
+  return 8765; // primary default
+};
 
 // Base URL for API requests
-const API_URL = process.env.NODE_ENV === 'production' 
-  ? '' // Same domain in production
-  : 'http://localhost:8765'; // Explicitly point to server in development
+const getApiUrl = () => {
+  if (process.env.NODE_ENV === 'production') {
+    return ''; // Same domain in production
+  }
+  
+  // For development
+  const serverPort = getServerPort();
+  console.log(`Using server port: ${serverPort} for API requests`);
+  return `http://localhost:${serverPort}`;
+};
+
+const API_URL = getApiUrl();
+
+// Log server connection status
+(async function checkServerAvailability() {
+  try {
+    const response = await fetch(`${API_URL}/api/connections`);
+    console.log(`Server connection check: ${response.status === 200 ? 'SUCCESS' : 'FAILED'} (${response.status})`);
+  } catch (error) {
+    console.error(`Server connection check FAILED: ${error.message}`);
+    console.log(`Failed connecting to: ${API_URL}/api/connections`);
+  }
+})();
 
 console.log('API Service Initialized:', {
   environment: process.env.NODE_ENV,
@@ -42,6 +70,7 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
   
   const defaultHeaders = {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   };
   
   const config = {
@@ -52,56 +81,95 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
     },
   };
   
+  // Log request details for debugging
+  console.log(`API Request: ${config.method || 'GET'} ${url}`);
+  if (config.body) {
+    try {
+      // Try to parse and log the request body if it's JSON
+      const bodyObj = JSON.parse(config.body as string);
+      console.log('Request body:', bodyObj);
+    } catch (e) {
+      // If it's not valid JSON, just log it as is
+      console.log('Request body (raw):', config.body);
+    }
+  }
+  
   try {
-    console.log(`Fetch request config:`, { url, method: config.method || 'GET' });
+    // Make the fetch request
     const response = await fetch(url, config);
-    console.log(`Received response with status: ${response.status}`);
+    console.log(`Received response from ${url} with status: ${response.status}`);
     
     // Try to parse the response as JSON
     let data;
     const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      // Handle non-JSON responses
-      const text = await response.text();
-      console.warn('Received non-JSON response:', text);
-      data = { message: text };
+    
+    try {
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.text();
+        console.log('Response text:', text.substring(0, 500) + (text.length > 500 ? '...' : ''));
+        try {
+          data = JSON.parse(text);
+        } catch (jsonError) {
+          console.error('Failed to parse JSON response:', jsonError);
+          data = { message: text };
+        }
+      } else {
+        // Handle non-JSON responses
+        const text = await response.text();
+        console.warn('Received non-JSON response:', text.substring(0, 500) + (text.length > 500 ? '...' : ''));
+        data = { message: text };
+      }
+    } catch (parseError) {
+      console.error('Error parsing response:', parseError);
+      throw new Error(`Failed to parse server response: ${parseError.message}`);
     }
     
+    // Handle error responses
     if (!response.ok) {
-      const error = new Error(data.message || `API error: ${response.status}`) as ApiError;
+      console.error('Server returned error status:', response.status, data);
+      const errorMessage = data && data.message 
+        ? data.message 
+        : `API error: ${response.status} ${response.statusText}`;
+      
+      const error = new Error(errorMessage) as ApiError;
       error.status = response.status;
+      error.data = data;
       throw error;
     }
     
+    // Return successful response data
     return data;
   } catch (error: any) {
+    // Handle network errors
+    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+      console.error('Network error connecting to server:', error);
+      const errorMsg = `Cannot connect to server at ${url}. Please check:
+      1. Server is running (on port ${API_URL.split(':').pop()})
+      2. Network connectivity
+      3. CORS configuration`;
+      
+      throw new Error(errorMsg);
+    }
+    
+    // Re-throw the error with enhanced context
     console.error('API request failed:', {
       url,
       method: config.method || 'GET',
       error: {
         name: error.name,
         message: error.message,
-        stack: error.stack
+        status: error.status,
+        data: error.data
       }
     });
-
-    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-      const errorMsg = `Cannot connect to server at ${url}. Please ensure:
-      1. The server is running on port 8765
-      2. There are no CORS issues
-      3. The endpoint exists`;
-      console.error('Network error:', errorMsg);
-      throw new Error(errorMsg);
-    }
-
-    // Handle API error responses
+    
+    // If it's already an augmented API error, just rethrow it
     if (error.status) {
-      throw new Error(`API Error ${error.status}: ${error.message || 'Unknown error'}`);
+      throw error;
     }
-
-    throw new Error(error.message || 'Unknown API error');
+    
+    // Otherwise wrap in a more helpful error
+    throw new Error(`API Error: ${error.message || 'Unknown error'}`);
   }
 }
 
@@ -198,17 +266,6 @@ export const tableApi = {
 };
 
 // Visualization endpoints
-interface Visualization {
-  id: number;
-  connection_id: number | null;
-  name: string;
-  type: string;
-  config: string | any;
-  table_name: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export const visualizationApi = {
   getAll: (): Promise<Visualization[]> => 
     apiRequest<Visualization[]>('/visualizations'),
@@ -308,16 +365,6 @@ export const visualizationApi = {
 };
 
 // Template endpoints
-interface Template {
-  id: number;
-  name: string;
-  description: string;
-  type: string;
-  config: string;
-  category: string;
-  is_default: boolean;
-}
-
 export const templateApi = {
   getAll: (): Promise<Template[]> => 
     apiRequest<Template[]>('/templates'),

@@ -34,6 +34,9 @@ function initializeDatabase() {
     // Create the tables if they don't exist
     createTablesIfNotExist();
     
+    // Seed the database with default templates
+    seedDefaultTemplates();
+    
     return db;
   } catch (error) {
     console.error('Error initializing the application database:', error);
@@ -87,6 +90,109 @@ function createTablesIfNotExist() {
         is_default BOOLEAN DEFAULT 0
       );
     `);
+  });
+}
+
+/**
+ * Seed the database with default templates
+ */
+function seedDefaultTemplates() {
+  // First check if any templates already exist
+  db.get('SELECT COUNT(*) as count FROM insight_templates', [], (err, row) => {
+    if (err) {
+      console.error('Error checking for existing templates:', err);
+      return;
+    }
+    
+    // If templates already exist, don't add defaults
+    if (row.count > 0) {
+      console.log('Templates already exist, skipping seed...');
+      return;
+    }
+    
+    // Define default templates
+    const defaultTemplates = [
+      {
+        name: 'Top Selling Products',
+        description: 'Visualizes your top selling products by revenue or quantity',
+        type: 'bar',
+        config: JSON.stringify({
+          title: 'Top Selling Products',
+          mappings: {
+            x: 'product_name',
+            y: 'revenue',
+            sort: 'desc',
+            limit: 10
+          }
+        }),
+        category: 'sales',
+        is_default: 1
+      },
+      {
+        name: 'Monthly Sales Trend',
+        description: 'Shows sales trends over monthly periods',
+        type: 'line',
+        config: JSON.stringify({
+          title: 'Monthly Sales Trend',
+          mappings: {
+            x: 'month',
+            y: 'revenue',
+            groupBy: 'month'
+          }
+        }),
+        category: 'sales',
+        is_default: 1
+      },
+      {
+        name: 'Customer Distribution',
+        description: 'Breaks down customers by region or category',
+        type: 'pie',
+        config: JSON.stringify({
+          title: 'Customer Distribution',
+          mappings: {
+            labels: 'region',
+            values: 'customer_count'
+          }
+        }),
+        category: 'customers',
+        is_default: 1
+      }
+    ];
+    
+    // Insert each template
+    const insertStmt = `
+      INSERT INTO insight_templates 
+      (name, description, type, config, category, is_default)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    
+    // Use serialize to ensure all inserts complete in order
+    db.serialize(() => {
+      db.run('BEGIN TRANSACTION');
+      
+      const stmt = db.prepare(insertStmt);
+      
+      defaultTemplates.forEach(template => {
+        stmt.run(
+          template.name,
+          template.description,
+          template.type,
+          template.config,
+          template.category,
+          template.is_default
+        );
+      });
+      
+      stmt.finalize();
+      
+      db.run('COMMIT', [], (err) => {
+        if (err) {
+          console.error('Error committing template transaction:', err);
+        } else {
+          console.log(`Added ${defaultTemplates.length} default templates`);
+        }
+      });
+    });
   });
 }
 

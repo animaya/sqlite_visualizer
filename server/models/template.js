@@ -30,12 +30,10 @@ const appDbService = require('../services/appDbService');
  * @param {Object|string} templateData.config - Configuration object or JSON string
  * @param {string} [templateData.category] - Category for grouping templates
  * @param {boolean} [templateData.is_default=false] - Whether this is a built-in template
- * @returns {Object} Created template with ID
+ * @returns {Promise<Object>} Created template with ID
  * @throws {Error} If required fields are missing or database operation fails
  */
-function create(templateData) {
-  const db = appDbService.getDb();
-  
+async function create(templateData) {
   try {
     // Validate required fields
     const { name, type, config } = templateData;
@@ -49,13 +47,6 @@ function create(templateData) {
       throw new Error('Template config is required');
     }
     
-    // Prepare the SQL statement
-    const stmt = db.prepare(`
-      INSERT INTO insight_templates (
-        name, description, type, config, category, is_default
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    
     // Convert config object to JSON string if it's not already a string
     const configStr = typeof config === 'object' ? JSON.stringify(config) : config;
     
@@ -63,18 +54,22 @@ function create(templateData) {
     const isDefault = templateData.is_default ? 1 : 0;
     
     // Execute the insert
-    const result = stmt.run(
+    const result = await appDbService.run(`
+      INSERT INTO insight_templates (
+        name, description, type, config, category, is_default
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `, [
       name,
       templateData.description || null,
       type,
       configStr,
       templateData.category || null,
       isDefault
-    );
+    ]);
     
     // Return the created template with ID
     return {
-      id: result.lastInsertRowid,
+      id: result.lastID,
       ...templateData,
       config: typeof config === 'string' ? config : configStr,
       is_default: Boolean(isDefault)
@@ -88,25 +83,21 @@ function create(templateData) {
 /**
  * Find a template by ID
  * @param {number|string} id - Template ID
- * @returns {Object|null} Template object or null if not found
+ * @returns {Promise<Object|null>} Template object or null if not found
  * @throws {Error} If database operation fails
  */
-function findById(id) {
-  const db = appDbService.getDb();
-  
+async function findById(id) {
   try {
     // Validate ID
     if (!id) {
       throw new Error('Template ID is required');
     }
     
-    const stmt = db.prepare(`
+    const template = await appDbService.get(`
       SELECT id, name, description, type, config, category, is_default
       FROM insight_templates
       WHERE id = ?
-    `);
-    
-    const template = stmt.get(id);
+    `, [id]);
     
     if (!template) {
       return null;
@@ -136,12 +127,10 @@ function findById(id) {
  * @param {string} [filters.type] - Filter by chart type
  * @param {boolean} [filters.isDefault] - Filter by default status
  * @param {string} [filters.search] - Search in name and description
- * @returns {Array} Array of template objects
+ * @returns {Promise<Array>} Array of template objects
  * @throws {Error} If database operation fails
  */
-function findAll(filters = {}) {
-  const db = appDbService.getDb();
-  
+async function findAll(filters = {}) {
   try {
     let query = `
       SELECT id, name, description, type, config, category, is_default
@@ -181,23 +170,26 @@ function findAll(filters = {}) {
     // Add ordering
     query += ' ORDER BY name ASC';
     
-    const stmt = db.prepare(query);
-    const templates = stmt.all(...params);
+    const templates = await appDbService.all(query, params);
     
     // Process results
     return templates.map(template => {
+      if (!template) return null;
+      
       // Parse config JSON strings to objects
-      try {
-        template.config = JSON.parse(template.config);
-      } catch (e) {
-        console.warn(`Failed to parse template config for template ${template.id}. Using raw string.`);
+      if (template.config) {
+        try {
+          template.config = JSON.parse(template.config);
+        } catch (e) {
+          console.warn(`Failed to parse template config for template ${template.id}. Using raw string.`);
+        }
       }
       
       // Convert SQLite integer boolean to JavaScript boolean
       template.is_default = Boolean(template.is_default);
       
       return template;
-    });
+    }).filter(Boolean); // Filter out any null values
   } catch (error) {
     console.error('Failed to find templates:', error);
     throw error;
@@ -214,25 +206,19 @@ function findAll(filters = {}) {
  * @param {Object|string} [templateData.config] - Configuration object or JSON string
  * @param {string} [templateData.category] - Category for grouping templates
  * @param {boolean} [templateData.is_default] - Whether this is a built-in template
- * @returns {Object|null} Updated template or null if not found
+ * @returns {Promise<Object|null>} Updated template or null if not found
  * @throws {Error} If database operation fails
  */
-function update(id, templateData) {
-  const db = appDbService.getDb();
-  
+async function update(id, templateData) {
   try {
     // Validate ID
     if (!id) {
       throw new Error('Template ID is required');
     }
     
-    // Begin transaction
-    db.prepare('BEGIN TRANSACTION').run();
-    
     // First check if the template exists
-    const existing = findById(id);
+    const existing = await findById(id);
     if (!existing) {
-      db.prepare('ROLLBACK').run();
       return null;
     }
     
@@ -242,7 +228,6 @@ function update(id, templateData) {
     
     if (templateData.name !== undefined) {
       if (typeof templateData.name !== 'string' || !templateData.name.trim()) {
-        db.prepare('ROLLBACK').run();
         throw new Error('Template name must be a non-empty string');
       }
       updates.push('name = ?');
@@ -256,7 +241,6 @@ function update(id, templateData) {
     
     if (templateData.type !== undefined) {
       if (typeof templateData.type !== 'string' || !templateData.type.trim()) {
-        db.prepare('ROLLBACK').run();
         throw new Error('Template type must be a non-empty string');
       }
       updates.push('type = ?');
@@ -265,7 +249,6 @@ function update(id, templateData) {
     
     if (templateData.config !== undefined) {
       if (!templateData.config) {
-        db.prepare('ROLLBACK').run();
         throw new Error('Template config cannot be empty');
       }
       updates.push('config = ?');
@@ -287,7 +270,6 @@ function update(id, templateData) {
     
     // If nothing to update, return existing template
     if (updates.length === 0) {
-      db.prepare('ROLLBACK').run();
       return existing;
     }
     
@@ -295,31 +277,19 @@ function update(id, templateData) {
     params.push(id);
     
     // Execute update
-    const stmt = db.prepare(`
+    const result = await appDbService.run(`
       UPDATE insight_templates
       SET ${updates.join(', ')}
       WHERE id = ?
-    `);
-    
-    const result = stmt.run(...params);
-    
-    // Commit transaction
-    db.prepare('COMMIT').run();
+    `, params);
     
     if (result.changes === 0) {
       return null;
     }
     
     // Return updated template
-    return findById(id);
+    return await findById(id);
   } catch (error) {
-    // Rollback transaction on error
-    try {
-      db.prepare('ROLLBACK').run();
-    } catch (rollbackError) {
-      console.error('Failed to rollback transaction:', rollbackError);
-    }
-    
     console.error(`Failed to update template ${id}:`, error);
     throw error;
   }
@@ -328,20 +298,17 @@ function update(id, templateData) {
 /**
  * Remove a template
  * @param {number|string} id - Template ID
- * @returns {boolean} True if template was removed, false if not found
+ * @returns {Promise<boolean>} True if template was removed, false if not found
  * @throws {Error} If database operation fails
  */
-function remove(id) {
-  const db = appDbService.getDb();
-  
+async function remove(id) {
   try {
     // Validate ID
     if (!id) {
       throw new Error('Template ID is required');
     }
     
-    const stmt = db.prepare('DELETE FROM insight_templates WHERE id = ?');
-    const result = stmt.run(id);
+    const result = await appDbService.run('DELETE FROM insight_templates WHERE id = ?', [id]);
     
     return result.changes > 0;
   } catch (error) {

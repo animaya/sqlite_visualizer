@@ -9,7 +9,12 @@
  */
 function errorHandler(err, req, res, next) {
   // Log the error for server-side debugging
-  console.error('Error:', err);
+  console.error('Error handling request:', {
+    url: req.url,
+    method: req.method,
+    error: err.message,
+    stack: err.stack
+  });
   
   // Default error status and message
   let statusCode = err.statusCode || 500;
@@ -26,6 +31,9 @@ function errorHandler(err, req, res, next) {
   } else if (err.code === 'SQLITE_ERROR') {
     statusCode = 400;
     message = 'Database Error';
+  } else if (err.code === 'ENOENT' && err.message.includes('no such file or directory')) {
+    statusCode = 404; 
+    message = 'File not found: ' + (err.path || 'Unknown path');
   }
   
   // In production, don't expose detailed error information
