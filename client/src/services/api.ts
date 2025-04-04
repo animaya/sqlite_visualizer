@@ -7,24 +7,9 @@ import { Connection, Visualization, Template, ApiError } from '../types';
 
 // Detect server port from environment or fallback to default
 const getServerPort = () => {
-  // In development, read from window.location if available
-  if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
-    const url = new URL(window.location.href);
-    
-    // If running in standard Vite dev mode, server is at 8765 by default
-    if (url.port === '5173' || url.port === '5174') {
-      return 8765;
-    }
-    
-    // If running in a different development setup, try to calculate the server port
-    const clientPort = parseInt(url.port);
-    if (!isNaN(clientPort) && clientPort > 1000) {
-      return clientPort - 1000 + 8765; 
-    }
-  }
-  
-  // Default fallback ports
-  return 8765; // primary default
+  // Always use the default port in development
+  // This ensures we connect to the Express server running on port 8765
+  return 8765;
 };
 
 // Base URL for API requests

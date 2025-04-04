@@ -49,45 +49,7 @@ const detectRunningServerPort = async (): Promise<number> => {
   // Default port from server's configuration
   const DEFAULT_SERVER_PORT = 8765
   
-  // List of ports to check (the default plus some commonly used alternatives)
-  const portsToCheck = [8765, 8766, 8767, 8768, 8769, 8770, 8771, 8772, 8773, 8774, 8775]
-  
-  // Try each port
-  for (const port of portsToCheck) {
-    try {
-      // Try to make a request to the server
-      await new Promise<void>((resolve, reject) => {
-        const req = http.get(`http://localhost:${port}/api/connections`, (res) => {
-          // If we get any response (even an error), the server is running
-          if (res.statusCode) {
-            resolve()
-          } else {
-            reject(new Error('No status code'))
-          }
-          
-          // Consume response data to free up memory
-          res.resume()
-        })
-        
-        req.on('error', reject)
-        
-        // Set a timeout to avoid hanging
-        req.setTimeout(500, () => {
-          req.destroy()
-          reject(new Error('Request timeout'))
-        })
-      })
-      
-      console.log(`Found server running on port ${port}`)
-      return port
-    } catch (err) {
-      // If we get here, the server is not running on this port
-      continue
-    }
-  }
-  
-  // If we can't detect the server, return the default port
-  console.log(`Could not detect running server, defaulting to port ${DEFAULT_SERVER_PORT}`)
+  console.log(`Using server port ${DEFAULT_SERVER_PORT}`)
   return DEFAULT_SERVER_PORT
 }
 
