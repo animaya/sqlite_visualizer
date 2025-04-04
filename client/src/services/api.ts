@@ -176,11 +176,11 @@ export const tableApi = {
 // Visualization endpoints
 interface Visualization {
   id: number;
-  connection_id: number;
+  connection_id: number | null;
   name: string;
   type: string;
-  config: string;
-  table_name: string;
+  config: string | any;
+  table_name: string | null;
   created_at: string;
   updated_at: string;
 }

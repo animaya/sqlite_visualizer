@@ -77,22 +77,39 @@ async function getAllVisualizations() {
     const visualizations = db.prepare(`
       SELECT 
         id,
-        connection_id AS connectionId,
+        connection_id,
         name,
         type,
         config,
-        table_name AS tableName,
-        created_at AS createdAt,
-        updated_at AS updatedAt
+        table_name,
+        created_at,
+        updated_at
       FROM saved_visualizations
       ORDER BY updated_at DESC
     `).all();
     
-    // Parse the JSON config for each visualization
-    return visualizations.map(visualization => ({
-      ...visualization,
-      config: JSON.parse(visualization.config)
-    }));
+    // Convert to camelCase and parse the JSON config for each visualization
+    return visualizations.map(visualization => {
+      // Parse config safely
+      let parsedConfig = visualization.config;
+      try {
+        parsedConfig = JSON.parse(visualization.config);
+      } catch (err) {
+        console.error(`Failed to parse config for visualization ${visualization.id}:`, err);
+        // Use original string if parsing fails
+      }
+      
+      return {
+        id: visualization.id,
+        connection_id: visualization.connection_id,
+        name: visualization.name,
+        type: visualization.type,
+        config: parsedConfig,
+        table_name: visualization.table_name,
+        created_at: visualization.created_at,
+        updated_at: visualization.updated_at
+      };
+    });
   } catch (error) {
     console.error('Error retrieving visualizations:', error);
     throw new Error(`Failed to retrieve visualizations: ${error.message}`);

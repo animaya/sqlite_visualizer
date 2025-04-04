@@ -7,11 +7,11 @@ import ChartRenderer from '../components/visualization/ChartRenderer'
 // TypeScript interfaces
 interface Visualization {
   id: number;
-  connection_id: number;
+  connection_id: number | null;
   name: string;
   type: string;
-  config: string;
-  table_name: string;
+  config: string | any;
+  table_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -305,13 +305,17 @@ function SavedVisualizations() {
       return;
     }
     
-    // Parse the config to get the mappings
+    // Get the config and mappings
     let config;
-    try {
-      config = JSON.parse(visualization.config);
-    } catch (err) {
-      toast.error("Failed to parse visualization configuration");
-      return;
+    if (typeof visualization.config === 'string') {
+      try {
+        config = JSON.parse(visualization.config);
+      } catch (err) {
+        toast.error("Failed to parse visualization configuration");
+        return;
+      }
+    } else {
+      config = visualization.config;
     }
     
     navigate('/visualize', { 
