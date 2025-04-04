@@ -4,6 +4,22 @@
  * Handles all API requests to the backend
  */
 
+// TypeScript interfaces
+interface Connection {
+  id: number;
+  name: string;
+  path: string;
+  last_accessed: string;
+  size_bytes?: number;
+  table_count?: number;
+  is_valid: boolean;
+}
+
+interface ApiError extends Error {
+  status?: number;
+}
+
+// Base URL for API requests
 const API_URL = process.env.NODE_ENV === 'production' 
   ? '' // Same domain in production
   : 'http://localhost:3000'; // Dev server
@@ -12,9 +28,9 @@ const API_URL = process.env.NODE_ENV === 'production'
  * Make an API request
  * @param {string} endpoint - API endpoint
  * @param {Object} options - Fetch options
- * @returns {Promise} - Response data
+ * @returns {Promise<any>} - Response data
  */
-async function apiRequest(endpoint: string, options: RequestInit = {}) {
+async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_URL}/api${endpoint}`;
   
   const defaultHeaders = {
@@ -25,7 +41,7 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
     ...options,
     headers: {
       ...defaultHeaders,
-      ...options.headers,
+      ...(options.headers || {}),
     },
   };
   
@@ -34,11 +50,13 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(data.message || 'An error occurred');
+      const error = new Error(data.message || 'An error occurred') as ApiError;
+      error.status = response.status;
+      throw error;
     }
     
     return data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('API request failed:', error);
     throw error;
   }
@@ -46,81 +64,176 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
 
 // Connection endpoints
 export const connectionApi = {
-  getAll: () => apiRequest('/connections'),
+  getAll: (): Promise<Connection[]> => 
+    apiRequest<Connection[]>('/connections'),
   
-  getById: (id: string) => apiRequest(`/connections/${id}`),
+  getById: (id: string | number): Promise<Connection> => 
+    apiRequest<Connection>(`/connections/${id}`),
   
-  create: (connectionData: any) => apiRequest('/connections', {
-    method: 'POST',
-    body: JSON.stringify(connectionData),
-  }),
+  create: (connectionData: { name: string; path: string }): Promise<Connection> => 
+    apiRequest<Connection>('/connections', {
+      method: 'POST',
+      body: JSON.stringify(connectionData),
+    }),
   
-  delete: (id: string) => apiRequest(`/connections/${id}`, {
-    method: 'DELETE',
-  }),
+  delete: (id: string | number): Promise<void> => 
+    apiRequest<void>(`/connections/${id}`, {
+      method: 'DELETE',
+    }),
   
-  checkHealth: (id: string) => apiRequest(`/connections/${id}/health`),
+  checkHealth: (id: string | number): Promise<{
+    size_bytes: number;
+    table_count: number;
+    is_valid: boolean;
+    last_checked: string;
+  }> => 
+    apiRequest<{
+      size_bytes: number;
+      table_count: number;
+      is_valid: boolean;
+      last_checked: string;
+    }>(`/connections/${id}/health`),
 };
 
 // Table endpoints
 export const tableApi = {
-  getAll: (connectionId: string) => apiRequest(`/connections/${connectionId}/tables`),
+  getAll: (connectionId: string | number): Promise<{
+    name: string;
+    type: string;
+  }[]> => 
+    apiRequest<{
+      name: string;
+      type: string;
+    }[]>(`/connections/${connectionId}/tables`),
   
-  getSchema: (connectionId: string, tableName: string) => 
-    apiRequest(`/connections/${connectionId}/tables/${tableName}/schema`),
+  getSchema: (connectionId: string | number, tableName: string): Promise<{
+    columns: {
+      name: string;
+      type: string;
+      nullable: boolean;
+    }[];
+  }> => 
+    apiRequest<{
+      columns: {
+        name: string;
+        type: string;
+        nullable: boolean;
+      }[];
+    }>(`/connections/${connectionId}/tables/${tableName}/schema`),
   
-  getData: (connectionId: string, tableName: string, params = {}) => {
+  getData: <T>(connectionId: string | number, tableName: string, params: Record<string, any> = {}): Promise<{
+    data: T[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      queryParams.append(key, String(value));
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
     });
     
-    return apiRequest(`/connections/${connectionId}/tables/${tableName}/data?${queryParams}`);
+    return apiRequest<{
+      data: T[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>(`/connections/${connectionId}/tables/${tableName}/data?${queryParams}`);
   },
   
-  getSample: (connectionId: string, tableName: string, limit = 10) => 
-    apiRequest(`/connections/${connectionId}/tables/${tableName}/data/sample?limit=${limit}`),
+  getSample: <T>(connectionId: string | number, tableName: string, limit = 10): Promise<{
+    data: T[];
+    count: number;
+  }> => 
+    apiRequest<{
+      data: T[];
+      count: number;
+    }>(`/connections/${connectionId}/tables/${tableName}/data/sample?limit=${limit}`),
 };
 
 // Visualization endpoints
+interface Visualization {
+  id: number;
+  connection_id: number;
+  name: string;
+  type: string;
+  config: string;
+  table_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export const visualizationApi = {
-  getAll: () => apiRequest('/visualizations'),
+  getAll: (): Promise<Visualization[]> => 
+    apiRequest<Visualization[]>('/visualizations'),
   
-  getById: (id: string) => apiRequest(`/visualizations/${id}`),
+  getById: (id: string | number): Promise<Visualization> => 
+    apiRequest<Visualization>(`/visualizations/${id}`),
   
-  create: (visualizationData: any) => apiRequest('/visualizations', {
-    method: 'POST',
-    body: JSON.stringify(visualizationData),
-  }),
+  create: (visualizationData: Omit<Visualization, 'id' | 'created_at' | 'updated_at'>): Promise<Visualization> => 
+    apiRequest<Visualization>('/visualizations', {
+      method: 'POST',
+      body: JSON.stringify(visualizationData),
+    }),
   
-  update: (id: string, visualizationData: any) => apiRequest(`/visualizations/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(visualizationData),
-  }),
+  update: (id: string | number, visualizationData: Partial<Omit<Visualization, 'id' | 'created_at' | 'updated_at'>>): Promise<Visualization> => 
+    apiRequest<Visualization>(`/visualizations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(visualizationData),
+    }),
   
-  delete: (id: string) => apiRequest(`/visualizations/${id}`, {
-    method: 'DELETE',
-  }),
+  delete: (id: string | number): Promise<void> => 
+    apiRequest<void>(`/visualizations/${id}`, {
+      method: 'DELETE',
+    }),
 };
 
 // Template endpoints
+interface Template {
+  id: number;
+  name: string;
+  description: string;
+  type: string;
+  config: string;
+  category: string;
+  is_default: boolean;
+}
+
 export const templateApi = {
-  getAll: () => apiRequest('/templates'),
+  getAll: (): Promise<Template[]> => 
+    apiRequest<Template[]>('/templates'),
   
-  getById: (id: string) => apiRequest(`/templates/${id}`),
+  getById: (id: string | number): Promise<Template> => 
+    apiRequest<Template>(`/templates/${id}`),
   
-  apply: (templateId: string, applicationData: any) => apiRequest(`/templates/${templateId}/apply`, {
-    method: 'POST',
-    body: JSON.stringify(applicationData),
-  }),
+  apply: (templateId: string | number, applicationData: {
+    connectionId: number;
+    tableNames: string[];
+    mappings: Record<string, string>;
+  }): Promise<{
+    data: any[];
+    config: Record<string, any>;
+    type: string;
+  }> => 
+    apiRequest<{
+      data: any[];
+      config: Record<string, any>;
+      type: string;
+    }>(`/templates/${templateId}/apply`, {
+      method: 'POST',
+      body: JSON.stringify(applicationData),
+    }),
 };
 
 // Export endpoints
 export const exportApi = {
-  exportVisualization: (visualizationId: string) => 
+  exportVisualization: (visualizationId: string | number): string => 
     `${API_URL}/api/export/csv/${visualizationId}`,
   
-  exportTable: (connectionId: string, tableName: string) => 
+  exportTable: (connectionId: string | number, tableName: string): string => 
     `${API_URL}/api/export/csv/table/${connectionId}/${tableName}`,
 };
 
