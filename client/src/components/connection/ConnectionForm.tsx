@@ -1,5 +1,5 @@
 import { useState, ChangeEvent, FormEvent } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Database, FileCheck, AlignLeft, FolderOpen, AlertCircle } from 'lucide-react';
 
 // TypeScript interfaces
 interface ConnectionFormData {
@@ -119,19 +119,22 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
   };
   
   return (
-    <div className="bg-white p-6 rounded-md border border-slate-200 shadow-sm">
-      <h2 className="text-xl font-medium text-slate-900 mb-4">Add New Connection</h2>
+    <div className="card">
+      <div className="mb-5 flex items-center">
+        <Database className="h-5 w-5 text-primary mr-2" />
+        <h2 className="text-xl font-medium text-slate-900">Add New Connection</h2>
+      </div>
       
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         {/* General error message */}
         {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm flex items-start">
-            <span className="text-red-400 mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </span>
-            <span>{error}</span>
+          <div className="p-4 rounded-md bg-red-50 border border-red-200 flex">
+            <div className="flex-shrink-0 text-red-400">
+              <AlertCircle className="h-5 w-5" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
           </div>
         )}
         
@@ -140,19 +143,24 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
           <label htmlFor="connection-name" className="block text-sm font-medium text-slate-700">
             Connection Name
           </label>
-          <input
-            id="connection-name"
-            type="text"
-            value={name}
-            onChange={handleNameChange}
-            className={`w-full px-3 py-2 border ${
-              validationErrors.name 
-                ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
-                : 'border-slate-300 focus:ring-primary focus:border-primary'
-            } rounded-sm text-sm placeholder-slate-400 focus:outline-none focus:ring-2`}
-            placeholder="My Database"
-            autoComplete="off"
-          />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <AlignLeft className="h-4 w-4 text-slate-400" />
+            </div>
+            <input
+              id="connection-name"
+              type="text"
+              value={name}
+              onChange={handleNameChange}
+              className={`form-input pl-10 ${
+                validationErrors.name 
+                  ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
+                  : 'border-slate-300'
+              }`}
+              placeholder="My Database"
+              autoComplete="off"
+            />
+          </div>
           {validationErrors.name && (
             <p className="text-xs text-red-600 mt-1">{validationErrors.name}</p>
           )}
@@ -164,16 +172,19 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
             Database Path
           </label>
           <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <FolderOpen className="h-4 w-4 text-slate-400" />
+            </div>
             <input
               id="database-path"
               type="text"
               value={path}
               onChange={handlePathChange}
-              className={`w-full px-3 py-2 border ${
+              className={`form-input pl-10 ${
                 validationErrors.path 
                   ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
-                  : 'border-slate-300 focus:ring-primary focus:border-primary'
-              } rounded-sm text-sm placeholder-slate-400 focus:outline-none focus:ring-2`}
+                  : 'border-slate-300'
+              }`}
               placeholder="/path/to/database.sqlite"
               onFocus={() => recentPaths.length > 0 && setShowRecentPaths(true)}
               onBlur={() => setTimeout(() => setShowRecentPaths(false), 200)}
@@ -182,8 +193,9 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
             {recentPaths.length > 0 && (
               <button
                 type="button"
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
                 onClick={() => setShowRecentPaths(!showRecentPaths)}
+                aria-label="Show recent paths"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -193,16 +205,17 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
             
             {/* Recent paths dropdown */}
             {showRecentPaths && recentPaths.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg">
-                <ul className="max-h-60 overflow-auto py-1">
+              <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-md">
+                <ul className="max-h-60 overflow-auto py-1 divide-y divide-slate-100">
                   {recentPaths.map((recentPath, index) => (
                     <li key={`${recentPath}-${index}`}>
                       <button
                         type="button"
-                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 truncate"
+                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center"
                         onClick={() => handleSelectRecentPath(recentPath)}
                       >
-                        {recentPath}
+                        <FileCheck className="h-4 w-4 text-slate-400 mr-2 flex-shrink-0" />
+                        <span className="truncate">{recentPath}</span>
                       </button>
                     </li>
                   ))}
@@ -222,16 +235,19 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
         {/* Submit button */}
         <button
           type="submit"
-          className="w-full px-4 py-2 bg-primary text-white rounded text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary w-full flex justify-center items-center"
           disabled={loading}
         >
           {loading ? (
-            <span className="flex items-center justify-center">
-              <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+            <>
+              <Loader2 className="animate-spin mr-2 h-4 w-4" />
               Connecting...
-            </span>
+            </>
           ) : (
-            'Connect Database'
+            <>
+              <Database className="mr-2 h-4 w-4" />
+              Connect Database
+            </>
           )}
         </button>
       </form>
