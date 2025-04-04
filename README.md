@@ -25,12 +25,62 @@ A clean, user-friendly web application that visualizes SQLite database content i
 
 ## Setup Instructions
 
-TODO: Add setup instructions
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/sqlite-visualizer.git
+   cd sqlite-visualizer
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   cd client
+   npm install
+   cd ..
+   ```
+
+3. Initialize the application database:
+   ```bash
+   npm run setup-db
+   ```
 
 ## Development
 
-TODO: Add development instructions
+1. Start the development server (both backend and frontend):
+   ```bash
+   npm run dev
+   ```
+   
+   This will start:
+   - Backend server at http://localhost:3000
+   - Frontend at http://localhost:3011
+
+2. For separate development:
+   - Backend only: `npm run dev:server`
+   - Frontend only: `npm run dev:client`
 
 ## Deployment
 
-TODO: Add deployment instructions for local Mac within office network
+To deploy on a local Mac within an office network:
+
+1. Build the frontend:
+   ```bash
+   npm run build
+   ```
+
+2. Start the production server:
+   ```bash
+   npm start
+   ```
+
+3. Access the application at http://localhost:3000
+
+4. Share with colleagues on the same network using your machine's network IP:
+   ```bash
+   # Find your IP
+   ipconfig getifaddr en0  # for Wi-Fi
+   # or
+   ipconfig getifaddr en1  # for Ethernet
+   ```
+   
+   Then they can access the app at http://YOUR_IP:3000
