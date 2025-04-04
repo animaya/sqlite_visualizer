@@ -53,6 +53,7 @@ function Sidebar() {
                     : 'text-slate-700 hover:bg-slate-100'
                 }`
               }
+              end
             >
               Saved Visualizations
             </NavLink>

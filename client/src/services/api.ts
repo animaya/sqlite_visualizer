@@ -201,8 +201,19 @@ export const visualizationApi = {
     // Create query params for field selection
     const fields = Object.values(mappings).filter(Boolean);
     
+    // Define fields if they exist
+    const params: Record<string, any> = { limit };
+    if (fields.length > 0) {
+      params.fields = fields.join(',');
+    }
+    
     return tableApi.getSample<T>(connectionId, tableName, limit)
-      .then(response => response.data);
+      .then(response => response.data)
+      .catch(error => {
+        console.error('Error fetching sample data:', error);
+        // Return empty array on error to prevent UI from breaking
+        return [] as T[];
+      });
   },
   
   /**
@@ -219,11 +230,25 @@ export const visualizationApi = {
     // Create query params for field selection and pagination
     const fields = Object.values(mappings).filter(Boolean);
     
-    return tableApi.getData<T>(connectionId, tableName, { limit, page: 1 })
+    // Define query parameters
+    const params: Record<string, any> = { limit, page: 1 };
+    if (fields.length > 0) {
+      params.fields = fields.join(',');
+    }
+    
+    return tableApi.getData<T>(connectionId, tableName, params)
       .then(response => ({
         data: response.data,
         total: response.total
-      }));
+      }))
+      .catch(error => {
+        console.error('Error fetching full data:', error);
+        // Return empty data on error to prevent UI from breaking
+        return {
+          data: [] as T[],
+          total: 0
+        };
+      });
   }
 };
 
