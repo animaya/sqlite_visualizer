@@ -189,6 +189,42 @@ export const visualizationApi = {
     apiRequest<void>(`/visualizations/${id}`, {
       method: 'DELETE',
     }),
+    
+  /**
+   * Get sample data for a visualization preview
+   * @param connectionId - Database connection ID
+   * @param tableName - Table name
+   * @param mappings - Field mappings
+   * @param limit - Max number of records to return (default: 20)
+   */
+  getSampleData: <T>(connectionId: string | number, tableName: string, mappings: Record<string, string>, limit: number = 20): Promise<T[]> => {
+    // Create query params for field selection
+    const fields = Object.values(mappings).filter(Boolean);
+    
+    return tableApi.getSample<T>(connectionId, tableName, limit)
+      .then(response => response.data);
+  },
+  
+  /**
+   * Get full data for a visualization
+   * @param connectionId - Database connection ID
+   * @param tableName - Table name
+   * @param mappings - Field mappings
+   * @param limit - Max number of records to return (default: 500)
+   */
+  getFullData: <T>(connectionId: string | number, tableName: string, mappings: Record<string, string>, limit: number = 500): Promise<{
+    data: T[];
+    total: number;
+  }> => {
+    // Create query params for field selection and pagination
+    const fields = Object.values(mappings).filter(Boolean);
+    
+    return tableApi.getData<T>(connectionId, tableName, { limit, page: 1 })
+      .then(response => ({
+        data: response.data,
+        total: response.total
+      }));
+  }
 };
 
 // Template endpoints

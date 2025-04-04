@@ -65,14 +65,13 @@ function create(connectionData) {
     `);
     
     // Execute the insertion
-    // Convert boolean to integer (0 or 1) for SQLite compatibility
     const info = stmt.run(
       connectionData.name,
       connectionData.path,
       timestamp,
       size,
       tableCount,
-      isValid ? 1 : 0
+      isValid
     );
     
     // Return the created connection with ID
@@ -196,8 +195,7 @@ function findAll(options = {}) {
     
     if (validOnly) {
       query += ' WHERE is_valid = ?';
-      // Convert boolean to integer (0 or 1) for SQLite compatibility
-      params.push(1);
+      params.push(true);
     }
     
     query += ` ORDER BY ${safeSort} ${sortDir === 'asc' ? 'ASC' : 'DESC'}`;
@@ -262,8 +260,7 @@ function update(id, connectionData) {
     
     if (connectionData.is_valid !== undefined) {
       updates.push('is_valid = ?');
-      // Convert boolean to integer (0 or 1) for SQLite compatibility
-      params.push(connectionData.is_valid ? 1 : 0);
+      params.push(connectionData.is_valid);
     }
     
     // If no updates, return the current connection

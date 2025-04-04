@@ -1,10 +1,21 @@
+interface ChartType {
+  id: string;
+  label: string;
+  description: string;
+}
+
+interface ChartTypeSelectorProps {
+  selected: string;
+  onChange: (chartType: string) => void;
+}
+
 /**
  * Chart Type Selector Component
  * 
  * Allows users to select the type of chart for their visualization
  */
-function ChartTypeSelector({ selected, onChange }) {
-  const chartTypes = [
+function ChartTypeSelector({ selected, onChange }: ChartTypeSelectorProps) {
+  const chartTypes: ChartType[] = [
     { id: 'bar', label: 'Bar Chart', description: 'Compare values across categories' },
     { id: 'line', label: 'Line Chart', description: 'Show trends over time or categories' },
     { id: 'pie', label: 'Pie Chart', description: 'Show composition as parts of a whole' },

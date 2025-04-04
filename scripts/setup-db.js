@@ -37,7 +37,7 @@ db.exec(`
     last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     size_bytes INTEGER,
     table_count INTEGER,
-    is_valid BOOLEAN DEFAULT 1
+    is_valid INTEGER DEFAULT 1
   );
 `);
 
