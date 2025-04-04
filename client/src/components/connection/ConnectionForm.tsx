@@ -1,5 +1,5 @@
 import { useState, ChangeEvent, FormEvent } from 'react';
-import { Loader2, Database, FileCheck, AlignLeft, FolderOpen, AlertCircle } from 'lucide-react';
+import { Loader2, Database, FileCheck, AlignLeft, FolderOpen, AlertCircle, Info } from 'lucide-react';
 
 // TypeScript interfaces
 interface ConnectionFormData {
@@ -41,15 +41,28 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
     } else if (name.trim().length < 3) {
       errors.name = 'Connection name must be at least 3 characters';
       isValid = false;
+    } else if (name.trim().length > 50) {
+      errors.name = 'Connection name must be less than 50 characters';
+      isValid = false;
     }
     
     // Validate path
     if (!path.trim()) {
       errors.path = 'Database path is required';
       isValid = false;
-    } else if (!path.trim().endsWith('.sqlite') && !path.trim().endsWith('.db') && !path.trim().endsWith('.sqlite3')) {
-      errors.path = 'Path must point to a SQLite database file (.sqlite, .db, or .sqlite3)';
-      isValid = false;
+    } else {
+      const validExtensions = ['.sqlite', '.db', '.sqlite3'];
+      const hasValidExtension = validExtensions.some(ext => 
+        path.trim().toLowerCase().endsWith(ext)
+      );
+      
+      if (!hasValidExtension) {
+        errors.path = 'Must be a SQLite database file (.sqlite, .db, or .sqlite3)';
+        isValid = false;
+      } else if (path.trim().length > 500) {
+        errors.path = 'Path must be less than 500 characters';
+        isValid = false;
+      }
     }
     
     setValidationErrors(errors);
@@ -224,11 +237,15 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
             )}
           </div>
           {validationErrors.path ? (
-            <p className="text-xs text-red-600 mt-1">{validationErrors.path}</p>
+            <div className="flex items-start mt-1 text-xs text-red-600">
+              <AlertCircle className="h-4 w-4 mr-1 flex-shrink-0" />
+              <span>{validationErrors.path}</span>
+            </div>
           ) : (
-            <p className="text-xs text-slate-500">
-              Absolute path to the SQLite database file (.sqlite, .db, or .sqlite3)
-            </p>
+            <div className="flex items-start mt-1 text-xs text-slate-500">
+              <Info className="h-4 w-4 mr-1 flex-shrink-0 text-slate-400" />
+              <span>Absolute path to SQLite file (.sqlite, .db, or .sqlite3)</span>
+            </div>
           )}
         </div>
         
