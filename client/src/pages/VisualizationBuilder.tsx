@@ -198,12 +198,12 @@ const VisualizationBuilder: FC = () => {
       const visualizationData = {
         name: `${selectedTable} ${chartType} chart`,
         type: chartType,
-        connection_id: parseInt(selectedConnection, 10),
-        table_name: selectedTable,
-        config: JSON.stringify({
+        connectionId: parseInt(selectedConnection, 10),
+        tableName: selectedTable,
+        config: {
           mappings: fieldMappings,
           chartType
-        })
+        }
       };
       
       // Save to API
