@@ -4,10 +4,20 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </React.StrictMode>,
-)
+// Ensure we have a single clean render
+document.addEventListener('DOMContentLoaded', () => {
+  const rootElement = document.getElementById('root')
+  
+  if (rootElement) {
+    // Clear any existing content to prevent duplicates
+    rootElement.innerHTML = ''
+    
+    // Create root and render once
+    const root = ReactDOM.createRoot(rootElement)
+    root.render(
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    )
+  }
+})
