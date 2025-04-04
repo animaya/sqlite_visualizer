@@ -22,42 +22,66 @@ async function getAllTables(connectionId) {
     }
     
     // Query for tables (excluding SQLite system tables)
-    const tables = db.prepare(`
-      SELECT 
-        name,
-        type,
-        sql as creation_sql
-      FROM 
-        sqlite_master 
-      WHERE 
-        type = 'table' AND 
-        name NOT LIKE 'sqlite_%'
-      ORDER BY 
-        name
-    `).all();
+    let tables = [];
+    
+    try {
+      tables = db.all(`
+        SELECT 
+          name,
+          type,
+          sql as creation_sql
+        FROM 
+          sqlite_master 
+        WHERE 
+          type = 'table' AND 
+          name NOT LIKE 'sqlite_%'
+        ORDER BY 
+          name
+      `);
+    } catch (error) {
+      console.error(`Error querying tables: ${error.message}`);
+      return [];
+    }
+    
+    // Make sure tables is an array
+    if (!Array.isArray(tables)) {
+      console.error('Tables query did not return an array');
+      return [];
+    }
     
     // Add row count to each table
-    const tablesWithCount = tables.map(table => {
+    const tablesWithCount = [];
+    
+    for (const table of tables) {
+      // Skip if table is null or doesn't have a name
+      if (!table || !table.name) {
+        console.warn('Found a table entry without a name, skipping');
+        continue;
+      }
+      
       try {
-        // Get row count
-        const countResult = db.prepare(`SELECT COUNT(*) as count FROM "${table.name}"`).get();
-        return {
+        // Get row count safely
+        const countResult = db.get(`SELECT COUNT(*) as count FROM "${table.name}"`);
+        
+        tablesWithCount.push({
           name: table.name,
           type: table.type,
           creation_sql: table.creation_sql,
-          row_count: countResult.count
-        };
+          row_count: countResult ? countResult.count : 0
+        });
       } catch (error) {
         console.error(`Error getting row count for table ${table.name}:`, error);
-        return {
+        
+        // Still add the table, but with a count of 0 and an error indicator
+        tablesWithCount.push({
           name: table.name,
           type: table.type,
           creation_sql: table.creation_sql,
           row_count: 0,
           error: 'Failed to count rows'
-        };
+        });
       }
-    });
+    }
     
     return tablesWithCount;
   } catch (error) {

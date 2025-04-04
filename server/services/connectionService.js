@@ -248,21 +248,61 @@ async function getConnection(id) {
     }
     
     // Create a new connection (readonly for safety)
-    const dbConnection = await dbUtils.createReadOnlyConnection(connection.path);
-    
-    if (!dbConnection) {
-      throw new Error(`Failed to create connection to database at ${connection.path}`);
-    }
-    
-    // Store in active connections map
-    activeConnections.set(id, dbConnection);
-    
-    // Update last accessed timestamp
-    await connectionModel.update(id, {
-      last_accessed: new Date().toISOString()
+    return new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(connection.path, sqlite3.OPEN_READONLY, async (err) => {
+        if (err) {
+          console.error(`Error opening database: ${err.message}`);
+          reject(new Error(`Failed to connect to database: ${err.message}`));
+          return;
+        }
+        
+        // Enable foreign keys
+        db.run('PRAGMA foreign_keys = ON');
+        
+        // Add promise wrapper methods for convenience
+        db.all = (sql, params = []) => {
+          return new Promise((resolve, reject) => {
+            db.all(sql, params, (err, rows) => {
+              if (err) reject(err);
+              else resolve(rows || []);
+            });
+          });
+        };
+        
+        db.get = (sql, params = []) => {
+          return new Promise((resolve, reject) => {
+            db.get(sql, params, (err, row) => {
+              if (err) reject(err);
+              else resolve(row);
+            });
+          });
+        };
+        
+        db.run = (sql, params = []) => {
+          return new Promise((resolve, reject) => {
+            db.run(sql, params, function(err) {
+              if (err) reject(err);
+              else resolve({ lastID: this.lastID, changes: this.changes });
+            });
+          });
+        };
+        
+        // Store in active connections map
+        activeConnections.set(id, db);
+        
+        // Update last accessed timestamp
+        try {
+          await connectionModel.update(id, {
+            last_accessed: new Date().toISOString()
+          });
+        } catch (updateError) {
+          console.warn(`Warning: Failed to update last_accessed: ${updateError.message}`);
+          // Continue anyway - this is not critical
+        }
+        
+        resolve(db);
+      });
     });
-    
-    return dbConnection;
   } catch (error) {
     console.error(`Error getting connection for ID ${id}:`, error);
     throw error;

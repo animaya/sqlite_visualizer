@@ -95,105 +95,14 @@ function getTableCount(db) {
 
 /**
  * Create a safe read-only connection to a database
+ * Note: We've moved this functionality to connectionService.getConnection
+ * This method is kept for backwards compatibility
  * @param {string} dbPath - Path to the database file
- * @returns {Promise<Object|null>} Database connection
+ * @returns {null} Always returns null to prevent duplicate connections
  */
 function createReadOnlyConnection(dbPath) {
-  return new Promise((resolve) => {
-    try {
-      // Check if file exists
-      if (!fs.existsSync(dbPath)) {
-        console.error(`Database file not found: ${dbPath}`);
-        resolve(null);
-        return;
-      }
-      
-      // Open database in read-only mode
-      const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-        if (err) {
-          console.error(`Error opening database: ${err.message}`);
-          resolve(null);
-          return;
-        }
-        
-        // Enable foreign keys
-        db.run('PRAGMA foreign_keys = ON');
-        db.run('PRAGMA busy_timeout = 5000');
-        
-        // Add promise-based query helpers to the db object
-        db.allAsync = (sql, params = []) => {
-          return new Promise((resolve, reject) => {
-            db.all(sql, params, (err, rows) => {
-              if (err) reject(err);
-              else resolve(rows);
-            });
-          });
-        };
-        
-        db.getAsync = (sql, params = []) => {
-          return new Promise((resolve, reject) => {
-            db.get(sql, params, (err, row) => {
-              if (err) reject(err);
-              else resolve(row);
-            });
-          });
-        };
-        
-        db.runAsync = (sql, params = []) => {
-          return new Promise((resolve, reject) => {
-            db.run(sql, params, function(err) {
-              if (err) reject(err);
-              else resolve({ lastID: this.lastID, changes: this.changes });
-            });
-          });
-        };
-        
-        db.prepareAsync = (sql) => {
-          const stmt = db.prepare(sql);
-          
-          return {
-            all: (params = []) => {
-              return new Promise((resolve, reject) => {
-                stmt.all(params, (err, rows) => {
-                  if (err) reject(err);
-                  else resolve(rows);
-                });
-              });
-            },
-            get: (params = []) => {
-              return new Promise((resolve, reject) => {
-                stmt.get(params, (err, row) => {
-                  if (err) reject(err);
-                  else resolve(row);
-                });
-              });
-            },
-            run: (params = []) => {
-              return new Promise((resolve, reject) => {
-                stmt.run(params, function(err) {
-                  if (err) reject(err);
-                  else resolve({ lastID: this.lastID, changes: this.changes });
-                });
-              });
-            },
-            finalize: () => {
-              return new Promise((resolve, reject) => {
-                stmt.finalize((err) => {
-                  if (err) reject(err);
-                  else resolve();
-                });
-              });
-            }
-          };
-        };
-        
-        resolve(db);
-      });
-    } catch (error) {
-      console.error(`Error creating database connection: ${error.message}`);
-      resolve(null);
-    }
-  });
+  console.warn('createReadOnlyConnection is deprecated. Use connectionService.getConnection instead.');
+  return null;
 }
 
 /**
