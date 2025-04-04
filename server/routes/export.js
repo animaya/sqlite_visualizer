@@ -14,7 +14,6 @@ const exportService = require('../services/exportService');
  */
 router.get('/csv/:vizId', async (req, res, next) => {
   try {
-    // TODO: Implement exporting visualization as CSV
     const { vizId } = req.params;
     
     const { data, filename } = await exportService.exportVisualizationAsCsv(vizId);
@@ -33,10 +32,17 @@ router.get('/csv/:vizId', async (req, res, next) => {
  */
 router.get('/csv/table/:connectionId/:tableName', async (req, res, next) => {
   try {
-    // TODO: Implement exporting table as CSV
     const { connectionId, tableName } = req.params;
+    const { limit, filter, sort } = req.query;
     
-    const { data, filename } = await exportService.exportTableAsCsv(connectionId, tableName);
+    // Parse export options
+    const options = {
+      limit: limit ? parseInt(limit) : undefined,
+      filter: filter ? JSON.parse(filter) : undefined,
+      sort: sort ? JSON.parse(sort) : undefined
+    };
+    
+    const { data, filename } = await exportService.exportTableAsCsv(connectionId, tableName, options);
     
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
