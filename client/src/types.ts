@@ -36,6 +36,13 @@ export interface Visualization {
   updated_at: string;
 }
 
+// Table info
+export interface TableInfo {
+  name: string;
+  type?: string;
+  rowCount?: number;
+}
+
 // Table schema
 export interface TableSchema {
   columns: Column[];
@@ -46,6 +53,8 @@ export interface Column {
   name: string;
   type: string;
   nullable: boolean;
+  primaryKey?: boolean;
+  defaultValue?: string | null;
 }
 
 // Pagination parameters
