@@ -129,21 +129,53 @@ async function getTableSchema(connectionId, tableName) {
     }
     
     // Get table info (column details)
-    const columns = db.prepare(`PRAGMA table_info("${tableName}")`).all();
+    const columns = await new Promise((resolve, reject) => {
+      db.all(`PRAGMA table_info("${tableName}")`, [], (err, results) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(results || []);
+        }
+      });
+    });
     
     if (columns.length === 0) {
       throw new Error(`Table '${tableName}' not found`);
     }
     
     // Get foreign key information
-    const foreignKeys = db.prepare(`PRAGMA foreign_key_list("${tableName}")`).all();
+    const foreignKeys = await new Promise((resolve, reject) => {
+      db.all(`PRAGMA foreign_key_list("${tableName}")`, [], (err, results) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(results || []);
+        }
+      });
+    });
     
     // Get index information
-    const indices = db.prepare(`PRAGMA index_list("${tableName}")`).all();
+    const indices = await new Promise((resolve, reject) => {
+      db.all(`PRAGMA index_list("${tableName}")`, [], (err, results) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(results || []);
+        }
+      });
+    });
     
     // Process index details
-    const indexDetails = indices.map(index => {
-      const columns = db.prepare(`PRAGMA index_info("${index.name}")`).all();
+    const indexDetails = await Promise.all(indices.map(async (index) => {
+      const columns = await new Promise((resolve, reject) => {
+        db.all(`PRAGMA index_info("${index.name}")`, [], (err, results) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(results || []);
+          }
+        });
+      });
       return {
         ...index,
         columns: columns.map(col => ({
@@ -151,7 +183,7 @@ async function getTableSchema(connectionId, tableName) {
           position: col.seqno
         }))
       };
-    });
+    }));
     
     // Format columns with additional info
     const formattedColumns = columns.map(column => {
@@ -180,9 +212,19 @@ async function getTableSchema(connectionId, tableName) {
     });
     
     // Get table creation SQL
-    const tableInfo = db.prepare(`
-      SELECT sql FROM sqlite_master WHERE type='table' AND name = ?
-    `).get(tableName);
+    const tableInfo = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`,
+        [tableName],
+        (err, result) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(result);
+          }
+        }
+      );
+    });
     
     return {
       name: tableName,
@@ -232,7 +274,16 @@ async function getTableData(connectionId, tableName, options) {
     const countQuery = queryBuilder.buildCountQuery(tableName, options.filter);
     
     // Execute count query
-    const countResult = db.prepare(countQuery.sql).get(...countQuery.params);
+    const countResult = await new Promise((resolve, reject) => {
+      db.get(countQuery.sql, countQuery.params, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result || { count: 0 });
+        }
+      });
+    });
+    
     const total = countResult.count;
     
     // Build the paginated select query
@@ -248,7 +299,15 @@ async function getTableData(connectionId, tableName, options) {
     );
     
     // Execute data query
-    const data = db.prepare(dataQuery.sql).all(...dataQuery.params);
+    const data = await new Promise((resolve, reject) => {
+      db.all(dataQuery.sql, dataQuery.params, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows || []);
+        }
+      });
+    });
     
     return {
       data,
@@ -262,8 +321,6 @@ async function getTableData(connectionId, tableName, options) {
     throw new Error(`Failed to retrieve table data: ${error.message}`);
   }
 }
-
-// Note: buildWhereClause function removed as we now use queryBuilder.parseFilters
 
 /**
  * Get a sample of data from a table
@@ -296,11 +353,27 @@ async function getTableSample(connectionId, tableName, limit = 10) {
     );
     
     // Query for a sample of data
-    const data = db.prepare(sampleQuery.sql).all(...sampleQuery.params);
+    const data = await new Promise((resolve, reject) => {
+      db.all(sampleQuery.sql, sampleQuery.params, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows || []);
+        }
+      });
+    });
     
     // Build and execute count query
     const countQuery = queryBuilder.buildCountQuery(tableName);
-    const countResult = db.prepare(countQuery.sql).get(...countQuery.params);
+    const countResult = await new Promise((resolve, reject) => {
+      db.get(countQuery.sql, countQuery.params, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result || { count: 0 });
+        }
+      });
+    });
     
     return {
       data,
@@ -346,14 +419,20 @@ async function executeQuery(connectionId, query, params = []) {
     }
     
     // Execute the query
-    const stmt = db.prepare(query);
-    
     let data = [];
     let columns = [];
     
     // Check if it's a SELECT query (returns data)
     if (normalizedQuery.startsWith('SELECT') || normalizedQuery.startsWith('PRAGMA')) {
-      data = stmt.all(...params);
+      data = await new Promise((resolve, reject) => {
+        db.all(query, params, (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows || []);
+          }
+        });
+      });
       
       // Extract column names from first row
       if (data.length > 0) {
@@ -361,8 +440,21 @@ async function executeQuery(connectionId, query, params = []) {
       }
     } else {
       // For non-SELECT queries (shouldn't happen due to the check above)
-      const result = stmt.run(...params);
-      data = [{ changes: result.changes, lastInsertRowid: result.lastInsertRowid }];
+      // But we'll handle it gracefully just in case
+      const result = await new Promise((resolve, reject) => {
+        db.run(query, params, function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve({
+              changes: this.changes,
+              lastID: this.lastID
+            });
+          }
+        });
+      });
+      
+      data = [{ changes: result.changes, lastInsertRowid: result.lastID }];
       columns = ['changes', 'lastInsertRowid'];
     }
     
@@ -408,7 +500,7 @@ async function getDatabaseStats(connectionId) {
       totalRows,
       size: connection.size_bytes || 0,
       tables: tables.map(t => ({
-        name: t.table_name,
+        name: t.name,
         rows: t.row_count || 0
       }))
     };
@@ -448,7 +540,15 @@ async function getAggregatedData(connectionId, tableName, options) {
     const query = queryBuilder.buildAggregationQuery(tableName, options);
     
     // Execute the query
-    const data = db.prepare(query.sql).all(...query.params);
+    const data = await new Promise((resolve, reject) => {
+      db.all(query.sql, query.params, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows || []);
+        }
+      });
+    });
     
     return {
       data,
