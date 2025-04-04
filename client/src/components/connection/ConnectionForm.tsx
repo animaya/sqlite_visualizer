@@ -1,5 +1,5 @@
 import { useState, ChangeEvent, FormEvent } from 'react';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
+import { Loader2 } from 'lucide-react';
 
 // TypeScript interfaces
 interface ConnectionFormData {
@@ -227,7 +227,7 @@ function ConnectionForm({ onAddConnection, recentPaths = [] }: ConnectionFormPro
         >
           {loading ? (
             <span className="flex items-center justify-center">
-              <ArrowPathIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
+              <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
               Connecting...
             </span>
           ) : (
