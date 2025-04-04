@@ -22,7 +22,7 @@ interface ApiError extends Error {
 // Base URL for API requests
 const API_URL = process.env.NODE_ENV === 'production' 
   ? '' // Same domain in production
-  : 'http://localhost:4000'; // Dev server
+  : ''; // Empty string means it will use relative URLs, working with Vite proxy
 
 /**
  * Make an API request
