@@ -24,10 +24,10 @@ const appDbService = require('../services/appDbService');
 /**
  * Create a new connection record
  * @param {Object} connectionData - Connection details
- * @returns {Object} Created connection with ID
+ * @returns {Promise<Object>} Created connection with ID
  * @throws {Error} If required fields are missing or validation fails
  */
-function create(connectionData) {
+async function create(connectionData) {
   // Validate required fields
   if (!connectionData.name) {
     throw new Error('Connection name is required');
@@ -41,7 +41,7 @@ function create(connectionData) {
   
   try {
     // Check if a connection with the same path already exists
-    const existingByPath = db.prepare('SELECT id FROM connections WHERE path = ?').get(connectionData.path);
+    const existingByPath = await appDbService.get('SELECT id FROM connections WHERE path = ?', [connectionData.path]);
     if (existingByPath) {
       throw new Error(`A connection to '${connectionData.path}' already exists`);
     }
@@ -52,8 +52,9 @@ function create(connectionData) {
     const tableCount = connectionData.table_count || 0;
     const isValid = connectionData.is_valid !== undefined ? connectionData.is_valid : true;
     
-    // Prepare SQL statement for insertion
-    const stmt = db.prepare(`
+    // Execute the insertion
+    // Convert boolean to integer (0 or 1) for SQLite compatibility
+    const info = await appDbService.run(`
       INSERT INTO connections (
         name, 
         path, 
@@ -62,22 +63,18 @@ function create(connectionData) {
         table_count, 
         is_valid
       ) VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    
-    // Execute the insertion
-    // Convert boolean to integer (0 or 1) for SQLite compatibility
-    const info = stmt.run(
+    `, [
       connectionData.name,
       connectionData.path,
       timestamp,
       size,
       tableCount,
       isValid ? 1 : 0
-    );
+    ]);
     
     // Return the created connection with ID
     return {
-      id: info.lastInsertRowid,
+      id: info.lastID,
       name: connectionData.name,
       path: connectionData.path,
       last_accessed: timestamp,
@@ -100,20 +97,16 @@ function create(connectionData) {
 /**
  * Find a connection by ID
  * @param {number} id - Connection ID
- * @returns {Object|null} Connection object or null if not found
+ * @returns {Promise<Object|null>} Connection object or null if not found
  */
-function findById(id) {
+async function findById(id) {
   if (!id) {
     return null;
   }
   
-  const db = appDbService.getDb();
-  
   try {
-    // Prepare and execute the query
-    const stmt = db.prepare('SELECT * FROM connections WHERE id = ?');
-    const connection = stmt.get(id);
-    
+    // Execute the query
+    const connection = await appDbService.get('SELECT * FROM connections WHERE id = ?', [id]);
     return connection || null;
   } catch (error) {
     console.error(`Error finding connection with ID ${id}:`, error);
@@ -124,20 +117,16 @@ function findById(id) {
 /**
  * Find a connection by path
  * @param {string} path - Path to the database file
- * @returns {Object|null} Connection object or null if not found
+ * @returns {Promise<Object|null>} Connection object or null if not found
  */
-function findByPath(path) {
+async function findByPath(path) {
   if (!path) {
     return null;
   }
   
-  const db = appDbService.getDb();
-  
   try {
-    // Prepare and execute the query
-    const stmt = db.prepare('SELECT * FROM connections WHERE path = ?');
-    const connection = stmt.get(path);
-    
+    // Execute the query
+    const connection = await appDbService.get('SELECT * FROM connections WHERE path = ?', [path]);
     return connection || null;
   } catch (error) {
     console.error(`Error finding connection with path ${path}:`, error);
@@ -148,18 +137,18 @@ function findByPath(path) {
 /**
  * Update the last accessed timestamp for a connection
  * @param {number} id - Connection ID
- * @returns {boolean} True if updated successfully
+ * @returns {Promise<boolean>} True if updated successfully
  */
-function updateLastAccessed(id) {
+async function updateLastAccessed(id) {
   if (!id) {
     return false;
   }
   
-  const db = appDbService.getDb();
-  
   try {
-    const stmt = db.prepare('UPDATE connections SET last_accessed = ? WHERE id = ?');
-    const result = stmt.run(new Date().toISOString(), id);
+    const result = await appDbService.run(
+      'UPDATE connections SET last_accessed = ? WHERE id = ?', 
+      [new Date().toISOString(), id]
+    );
     
     return result.changes > 0;
   } catch (error) {
@@ -175,11 +164,9 @@ function updateLastAccessed(id) {
  * @param {string} options.sortBy - Field to sort by (default: 'last_accessed')
  * @param {string} options.sortDir - Sort direction: 'asc' or 'desc' (default: 'desc')
  * @param {boolean} options.validOnly - If true, only return valid connections
- * @returns {Array} Array of connection objects
+ * @returns {Promise<Array>} Array of connection objects
  */
-function findAll(options = {}) {
-  const db = appDbService.getDb();
-  
+async function findAll(options = {}) {
   try {
     // Default options
     const sortBy = options.sortBy || 'last_accessed';
@@ -202,10 +189,8 @@ function findAll(options = {}) {
     
     query += ` ORDER BY ${safeSort} ${sortDir === 'asc' ? 'ASC' : 'DESC'}`;
     
-    // Prepare and execute the query
-    const stmt = db.prepare(query);
-    const connections = params.length > 0 ? stmt.all(...params) : stmt.all();
-    
+    // Execute the query
+    const connections = await appDbService.all(query, params);
     return connections || [];
   } catch (error) {
     console.error('Error finding connections:', error);
@@ -217,15 +202,13 @@ function findAll(options = {}) {
  * Update a connection
  * @param {number} id - Connection ID
  * @param {Object} connectionData - Updated connection details
- * @returns {Object} Updated connection
+ * @returns {Promise<Object>} Updated connection
  * @throws {Error} If connection not found or validation fails
  */
-function update(id, connectionData) {
-  const db = appDbService.getDb();
-  
+async function update(id, connectionData) {
   try {
     // Get current connection
-    const currentConnection = findById(id);
+    const currentConnection = await findById(id);
     
     if (!currentConnection) {
       throw new Error(`Connection with ID ${id} not found`);
@@ -274,14 +257,12 @@ function update(id, connectionData) {
     // Add ID to params
     params.push(id);
     
-    // Prepare and execute the update
-    const stmt = db.prepare(`
+    // Execute the update
+    await appDbService.run(`
       UPDATE connections 
       SET ${updates.join(', ')}
       WHERE id = ?
-    `);
-    
-    stmt.run(...params);
+    `, params);
     
     // Return updated connection
     return findById(id);
@@ -294,35 +275,23 @@ function update(id, connectionData) {
 /**
  * Remove a connection
  * @param {number} id - Connection ID
- * @returns {boolean} True if deleted successfully, false if connection not found
+ * @returns {Promise<boolean>} True if deleted successfully, false if connection not found
  * @throws {Error} If an error occurs during deletion
  */
-function remove(id) {
+async function remove(id) {
   if (!id) {
     throw new Error('Connection ID is required for deletion');
   }
   
-  const db = appDbService.getDb();
-  
   try {
     // First check if the connection exists
-    const connection = findById(id);
+    const connection = await findById(id);
     if (!connection) {
       return false;
     }
     
-    // Perform the deletion inside a transaction to ensure atomicity
-    const deleteConnection = db.prepare('DELETE FROM connections WHERE id = ?');
-    
-    // For future reference: if there are related records to delete
-    // we'd add those statements here
-    
-    // Execute as transaction
-    const transaction = db.transaction(() => {
-      return deleteConnection.run(id);
-    });
-    
-    const result = transaction();
+    // Perform the deletion
+    const result = await appDbService.run('DELETE FROM connections WHERE id = ?', [id]);
     return result.changes > 0;
   } catch (error) {
     console.error(`Error removing connection with ID ${id}:`, error);

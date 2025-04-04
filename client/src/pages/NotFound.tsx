@@ -1,9 +1,10 @@
-import { Link } from 'react-router-dom'
+import { FC } from 'react';
+import { Link } from 'react-router-dom';
 
 /**
  * 404 Not Found Page
  */
-function NotFound() {
+const NotFound: FC = () => {
   return (
     <div className="flex flex-col items-center justify-center py-12">
       <h1 className="text-5xl font-bold text-slate-900 mb-4">404</h1>
@@ -15,7 +16,7 @@ function NotFound() {
         Go back home
       </Link>
     </div>
-  )
-}
+  );
+};
 
-export default NotFound
+export default NotFound;

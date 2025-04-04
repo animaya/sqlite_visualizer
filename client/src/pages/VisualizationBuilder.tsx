@@ -1,296 +1,184 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { toast } from 'react-hot-toast'
-import ChartTypeSelector from '../components/visualization/ChartTypeSelector'
-import FieldMapper from '../components/visualization/FieldMapper'
-import ChartRenderer from '../components/visualization/ChartRenderer'
-import { connectionApi, tableApi, visualizationApi } from '../services/api'
+import { FC, useState, useEffect } from 'react';
+import ChartTypeSelector from '../components/visualization/ChartTypeSelector';
+import FieldMapper from '../components/visualization/FieldMapper';
+import ChartRenderer from '../components/visualization/ChartRenderer';
+import { Connection, TableInfo, TableSchema, FieldMapping, ChartData } from '../types';
+import { connectionApi, tableApi, visualizationApi } from '../services/api';
 
-// TypeScript interfaces
-interface Connection {
-  id: number;
-  name: string;
-  path: string;
-  last_accessed: string;
-  size_bytes?: number;
-  table_count?: number;
-  is_valid: boolean;
-}
-
-interface TableInfo {
-  name: string;
-  type: string;
-}
-
-interface Column {
-  name: string;
-  type: string;
-  nullable: boolean;
-}
-
-interface TableSchema {
-  columns: Column[];
-}
-
-interface FieldMapping {
-  [key: string]: string;
-}
-
-interface ChartData {
-  labels?: string[];
-  datasets: {
-    label?: string;
-    data: any[];
-    backgroundColor?: string | string[];
-    borderColor?: string;
-    borderWidth?: number;
-    tension?: number;
-    fill?: boolean;
-    pointRadius?: number;
-    pointHoverRadius?: number;
-  }[];
-}
-
-interface LocationState {
-  connectionId?: number;
-  tableName?: string;
-}
+type ChartType = 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter';
 
 /**
  * Visualization Builder Page
  * 
  * Allows users to create custom visualizations from database data
  */
-function VisualizationBuilder() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  
-  // Get initial values from location state (if coming from TableViewer)
-  const state = location.state as LocationState;
-  const initialConnectionId = state?.connectionId;
-  const initialTableName = state?.tableName;
-  
-  // State for connections and tables
+const VisualizationBuilder: FC = () => {
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [selectedConnection, setSelectedConnection] = useState<number | null>(initialConnectionId || null);
+  const [selectedConnection, setSelectedConnection] = useState<string | null>(null);
   const [tables, setTables] = useState<TableInfo[]>([]);
-  const [selectedTable, setSelectedTable] = useState<string | null>(initialTableName || null);
-  
-  // State for visualization configuration
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [tableSchema, setTableSchema] = useState<TableSchema | null>(null);
-  const [tableSample, setTableSample] = useState<Record<string, any>[]>([]);
-  const [chartType, setChartType] = useState<string>('bar');
+  const [chartType, setChartType] = useState<ChartType>('bar');
   const [fieldMappings, setFieldMappings] = useState<FieldMapping>({});
   const [chartData, setChartData] = useState<ChartData | null>(null);
-  const [visualizationName, setVisualizationName] = useState<string>('');
-  
-  // Loading and error states
-  const [connectionsLoading, setConnectionsLoading] = useState<boolean>(true);
-  const [tablesLoading, setTablesLoading] = useState<boolean>(false);
-  const [dataLoading, setDataLoading] = useState<boolean>(false);
-  const [saveLoading, setSaveLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Fetch all connections when component mounts
   useEffect(() => {
+    // Fetch connections from API
     const fetchConnections = async () => {
       try {
-        setConnectionsLoading(true);
+        setLoading(true);
         const data = await connectionApi.getAll();
         setConnections(data);
+        setError(null);
       } catch (err) {
-        console.error('Failed to fetch connections:', err);
-        toast.error('Failed to load database connections');
+        setError(err instanceof Error ? err.message : 'Failed to load connections');
       } finally {
-        setConnectionsLoading(false);
+        setLoading(false);
       }
     };
-
+    
     fetchConnections();
   }, []);
   
-  // Fetch tables when connection is selected
   useEffect(() => {
+    // Fetch tables for the selected connection
     const fetchTables = async () => {
       if (!selectedConnection) return;
       
       try {
-        setTablesLoading(true);
+        setLoading(true);
         const data = await tableApi.getAll(selectedConnection);
         setTables(data);
+        setError(null);
       } catch (err) {
-        console.error('Failed to fetch tables:', err);
-        toast.error('Failed to load database tables');
+        setError(err instanceof Error ? err.message : 'Failed to load tables');
       } finally {
-        setTablesLoading(false);
+        setLoading(false);
       }
     };
-
+    
     fetchTables();
   }, [selectedConnection]);
   
-  // Fetch table schema and sample data when table is selected
   useEffect(() => {
-    const fetchTableData = async () => {
+    // Fetch table schema for the selected table
+    const fetchTableSchema = async () => {
       if (!selectedConnection || !selectedTable) return;
       
       try {
-        setDataLoading(true);
-        
-        // Get table schema
-        const schemaData = await tableApi.getSchema(selectedConnection, selectedTable);
-        setTableSchema(schemaData);
-        
-        // Get sample data
-        const sampleData = await tableApi.getSample(selectedConnection, selectedTable, 100);
-        setTableSample(sampleData.data);
-        
-        // Generate default visualization name
-        setVisualizationName(`${selectedTable.charAt(0).toUpperCase() + selectedTable.slice(1)} ${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`);
+        setLoading(true);
+        const schema = await tableApi.getSchema(selectedConnection, selectedTable);
+        setTableSchema(schema);
+        setError(null);
       } catch (err) {
-        console.error('Failed to fetch table schema or sample:', err);
-        toast.error('Failed to load table data');
+        setError(err instanceof Error ? err.message : 'Failed to load table schema');
       } finally {
-        setDataLoading(false);
+        setLoading(false);
       }
     };
-
-    fetchTableData();
+    
+    fetchTableSchema();
   }, [selectedConnection, selectedTable]);
   
-  // Generate chart data when mappings or chart type changes
   useEffect(() => {
-    if (!tableSchema || !tableSample.length || Object.keys(fieldMappings).length === 0) {
-      setChartData(null);
-      return;
-    }
-    
-    try {
-      // Generate chart data based on mappings and chart type
-      const generateChartData = (): ChartData | null => {
-        // Get the required mappings for the chart type
-        const requiredMappings: Record<string, string[]> = {
-          bar: ['x', 'y'],
-          line: ['x', 'y'],
-          pie: ['labels', 'values'],
-          doughnut: ['labels', 'values'],
-          scatter: ['x', 'y']
+    // Generate chart data based on field mappings
+    const generateChartData = async () => {
+      if (
+        !selectedConnection || 
+        !selectedTable || 
+        !tableSchema || 
+        Object.keys(fieldMappings).length === 0
+      ) {
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        
+        // Get a sample of data from the table
+        const sample = await tableApi.getSample(selectedConnection, selectedTable);
+        
+        // Transform the data into a format suitable for Chart.js
+        // This is a simplified example - the actual transformation will depend on the chart type
+        const labels: string[] = [];
+        const values: number[] = [];
+        
+        sample.data.forEach((row: any) => {
+          if (chartType === 'bar' || chartType === 'line') {
+            labels.push(row[fieldMappings.x]);
+            values.push(parseFloat(row[fieldMappings.y]) || 0);
+          } else if (chartType === 'pie' || chartType === 'doughnut') {
+            labels.push(row[fieldMappings.labels]);
+            values.push(parseFloat(row[fieldMappings.values]) || 0);
+          } else if (chartType === 'scatter') {
+            // For scatter, we'll handle it differently since we need x/y coordinates
+            // This is simplified
+            labels.push(row[fieldMappings.x]);
+            values.push(parseFloat(row[fieldMappings.y]) || 0);
+          }
+        });
+        
+        // Create chart data object
+        const data: ChartData = {
+          labels,
+          datasets: [
+            {
+              label: 'Dataset',
+              data: values,
+              backgroundColor: 
+                chartType === 'bar' ? '#2563EB' :
+                chartType === 'line' ? 'rgba(37, 99, 235, 0.2)' :
+                [
+                  '#2563EB', // blue-600
+                  '#D946EF', // fuchsia-500
+                  '#F59E0B', // amber-500
+                  '#10B981', // emerald-500
+                  '#6366F1', // indigo-500
+                  '#EF4444', // red-500
+                  '#8B5CF6', // violet-500
+                  '#EC4899', // pink-500
+                  '#06B6D4', // cyan-500
+                  '#84CC16', // lime-500
+                ],
+              borderColor: chartType === 'line' ? '#2563EB' : undefined,
+              borderWidth: 2
+            }
+          ]
         };
         
-        const required = requiredMappings[chartType] || [];
-        
-        // Check if all required mappings are provided
-        const hasAllRequiredMappings = required.every(key => fieldMappings[key]);
-        if (!hasAllRequiredMappings) return null;
-        
-        // Process data based on chart type
-        if (chartType === 'bar' || chartType === 'line') {
-          // Extract values
-          const labels = tableSample.map(row => row[fieldMappings.x]);
-          const values = tableSample.map(row => row[fieldMappings.y]);
-          
-          // Create dataset
-          return {
-            labels,
-            datasets: [
-              {
-                label: fieldMappings.y,
-                data: values,
-                backgroundColor: chartType === 'bar' 
-                  ? [
-                      '#2563EB', '#D946EF', '#F59E0B', '#10B981', '#6366F1',
-                      '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'
-                    ]
-                  : '#2563EB',
-                borderColor: chartType === 'line' ? '#2563EB' : undefined,
-                borderWidth: chartType === 'line' ? 2 : undefined,
-                tension: chartType === 'line' ? 0.2 : undefined,
-                fill: chartType === 'line' ? false : undefined,
-              }
-            ]
-          };
-        } else if (chartType === 'pie' || chartType === 'doughnut') {
-          // Extract values
-          const labels = tableSample.map(row => row[fieldMappings.labels]);
-          const values = tableSample.map(row => row[fieldMappings.values]);
-          
-          // Create dataset
-          return {
-            labels,
-            datasets: [
-              {
-                data: values,
-                backgroundColor: [
-                  '#2563EB', '#D946EF', '#F59E0B', '#10B981', '#6366F1',
-                  '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'
-                ],
-                borderWidth: 2,
-                borderColor: '#FFFFFF'
-              }
-            ]
-          };
-        } else if (chartType === 'scatter') {
-          // Extract values
-          const data = tableSample.map(row => ({
-            x: row[fieldMappings.x],
-            y: row[fieldMappings.y],
-            r: fieldMappings.size ? row[fieldMappings.size] : 5,
-          }));
-          
-          // Create dataset
-          return {
-            datasets: [
-              {
-                label: 'Scatter Data',
-                data,
-                backgroundColor: '#2563EB',
-                borderColor: '#1E40AF',
-                borderWidth: 1,
-                pointRadius: 5,
-                pointHoverRadius: 8
-              }
-            ]
-          };
-        }
-        
-        return null;
-      };
-      
-      setChartData(generateChartData());
-    } catch (err) {
-      console.error('Failed to generate chart data:', err);
-      setChartData(null);
-    }
-  }, [tableSample, tableSchema, fieldMappings, chartType]);
+        setChartData(data);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to generate chart data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    generateChartData();
+  }, [selectedConnection, selectedTable, chartType, fieldMappings, tableSchema]);
   
-  const handleConnectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const connectionId = parseInt(e.target.value);
-    setSelectedConnection(connectionId || null);
+  const handleConnectionChange = (connectionId: string) => {
+    setSelectedConnection(connectionId);
     setSelectedTable(null);
     setTableSchema(null);
-    setTableSample([]);
     setFieldMappings({});
     setChartData(null);
   };
   
-  const handleTableChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const tableName = e.target.value;
-    setSelectedTable(tableName || null);
-    setTableSchema(null);
-    setTableSample([]);
+  const handleTableChange = (tableName: string) => {
+    setSelectedTable(tableName);
     setFieldMappings({});
     setChartData(null);
   };
   
-  const handleChartTypeChange = (type: string) => {
+  const handleChartTypeChange = (type: ChartType) => {
     setChartType(type);
-    // Clear field mappings when changing chart type
+    // Reset field mappings when changing chart type as they may be incompatible
     setFieldMappings({});
     setChartData(null);
-    // Update visualization name
-    if (selectedTable) {
-      setVisualizationName(`${selectedTable.charAt(0).toUpperCase() + selectedTable.slice(1)} ${type.charAt(0).toUpperCase() + type.slice(1)} Chart`);
-    }
   };
   
   const handleFieldMappingChange = (mappings: FieldMapping) => {
@@ -298,38 +186,37 @@ function VisualizationBuilder() {
   };
   
   const handleSaveVisualization = async () => {
-    if (!chartData || !selectedConnection || !selectedTable || !visualizationName) {
-      toast.error('Please complete all required fields');
+    if (!selectedConnection || !selectedTable || !chartData) {
+      setError('Cannot save visualization: missing data');
       return;
     }
     
     try {
-      setSaveLoading(true);
+      setLoading(true);
       
-      // Prepare visualization data
+      // Create visualization data object
       const visualizationData = {
-        name: visualizationName,
-        connection_id: selectedConnection,
-        table_name: selectedTable,
+        name: `${selectedTable} ${chartType} chart`,
         type: chartType,
-        config: JSON.stringify({
+        connectionId: selectedConnection,
+        tableName: selectedTable,
+        config: {
           mappings: fieldMappings,
           chartType
-        })
+        }
       };
       
-      // Save visualization
-      const result = await visualizationApi.create(visualizationData);
+      // Save to API
+      await visualizationApi.create(visualizationData);
       
-      toast.success('Visualization saved successfully');
+      // Show success message
+      alert('Visualization saved successfully!');
       
-      // Navigate to the visualization gallery
-      navigate('/gallery');
+      setError(null);
     } catch (err) {
-      console.error('Failed to save visualization:', err);
-      toast.error('Failed to save visualization');
+      setError(err instanceof Error ? err.message : 'Failed to save visualization');
     } finally {
-      setSaveLoading(false);
+      setLoading(false);
     }
   };
   
@@ -337,17 +224,11 @@ function VisualizationBuilder() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-semibold text-slate-900">Visualization Builder</h1>
-        <button
-          className="px-4 py-2 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200"
-          onClick={() => navigate('/gallery')}
-        >
-          View Saved Visualizations
-        </button>
       </div>
       
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
-          <p>Error: {error}</p>
+          {error}
         </div>
       )}
       
@@ -358,49 +239,45 @@ function VisualizationBuilder() {
           <div className="bg-white p-6 rounded-md border border-slate-200">
             <h2 className="text-xl font-medium text-slate-900 mb-4">Data Source</h2>
             <div className="space-y-4">
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <label className="block text-sm font-medium text-slate-700">
-                  Database Connection
+                  Connection
                 </label>
                 <select
-                  className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm bg-white"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
                   value={selectedConnection || ''}
-                  onChange={handleConnectionChange}
-                  disabled={connectionsLoading}
+                  onChange={(e) => handleConnectionChange(e.target.value)}
+                  disabled={loading}
                 >
                   <option value="">Select a connection</option>
-                  {connections.map(conn => (
-                    <option key={conn.id.toString()} value={conn.id}>
-                      {conn.name}
+                  {connections.map((connection) => (
+                    <option key={connection.id} value={connection.id.toString()}>
+                      {connection.name}
                     </option>
                   ))}
                 </select>
-                {connectionsLoading && (
-                  <p className="text-xs text-slate-500">Loading connections...</p>
-                )}
               </div>
               
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-700">
-                  Database Table
-                </label>
-                <select
-                  className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm bg-white"
-                  value={selectedTable || ''}
-                  onChange={handleTableChange}
-                  disabled={!selectedConnection || tablesLoading}
-                >
-                  <option value="">Select a table</option>
-                  {tables.map(table => (
-                    <option key={table.name} value={table.name}>
-                      {table.name}
-                    </option>
-                  ))}
-                </select>
-                {tablesLoading && (
-                  <p className="text-xs text-slate-500">Loading tables...</p>
-                )}
-              </div>
+              {selectedConnection && (
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Table
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+                    value={selectedTable || ''}
+                    onChange={(e) => handleTableChange(e.target.value)}
+                    disabled={loading || tables.length === 0}
+                  >
+                    <option value="">Select a table</option>
+                    {tables.map((table) => (
+                      <option key={table.name} value={table.name}>
+                        {table.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
           
@@ -416,9 +293,7 @@ function VisualizationBuilder() {
           {/* Field Mapping */}
           <div className="bg-white p-6 rounded-md border border-slate-200">
             <h2 className="text-xl font-medium text-slate-900 mb-4">Field Mapping</h2>
-            {dataLoading ? (
-              <p className="text-slate-500">Loading table schema...</p>
-            ) : tableSchema ? (
+            {tableSchema ? (
               <FieldMapper 
                 schema={tableSchema}
                 chartType={chartType}
@@ -429,20 +304,6 @@ function VisualizationBuilder() {
               <p className="text-slate-500">Select a table to map fields</p>
             )}
           </div>
-          
-          {/* Visualization Name */}
-          {chartData && (
-            <div className="bg-white p-6 rounded-md border border-slate-200">
-              <h2 className="text-xl font-medium text-slate-900 mb-4">Visualization Name</h2>
-              <input
-                type="text"
-                value={visualizationName}
-                onChange={(e) => setVisualizationName(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                placeholder="Enter a name for this visualization"
-              />
-            </div>
-          )}
         </div>
         
         {/* Chart Preview */}
@@ -452,38 +313,32 @@ function VisualizationBuilder() {
               <h2 className="text-xl font-medium text-slate-900">Chart Preview</h2>
               {chartData && (
                 <button
-                  className="px-4 py-2 bg-primary text-white rounded text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-primary text-white rounded text-sm font-medium hover:bg-primary-dark transition-colors"
                   onClick={handleSaveVisualization}
-                  disabled={saveLoading || !visualizationName}
+                  disabled={loading}
                 >
-                  {saveLoading ? 'Saving...' : 'Save Visualization'}
+                  Save Visualization
                 </button>
               )}
             </div>
             
             <div className="h-[500px] flex items-center justify-center">
-              {dataLoading ? (
-                <p className="text-slate-500">Loading data...</p>
+              {loading ? (
+                <p className="text-slate-500">Loading chart data...</p>
               ) : chartData ? (
                 <ChartRenderer 
                   type={chartType}
                   data={chartData}
                 />
               ) : (
-                <p className="text-slate-500">
-                  {!selectedTable 
-                    ? 'Select a data source to get started' 
-                    : !Object.keys(fieldMappings).length
-                      ? 'Map fields to generate a chart'
-                      : 'Configuring chart...'}
-                </p>
+                <p className="text-slate-500">Select data source and map fields to generate a chart</p>
               )}
             </div>
           </div>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default VisualizationBuilder
+export default VisualizationBuilder;

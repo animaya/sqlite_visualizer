@@ -5,16 +5,18 @@
   "main": "server/app.js",
   "scripts": {
     "start": "node server/app.js",
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "node scripts/start-dev.js",
     "dev:server": "nodemon server/app.js",
     "dev:client": "cd client && npm run dev",
     "build": "cd client && npm run build",
     "setup-db": "node scripts/setup-db.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "stop": "node scripts/stop-processes.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@tailwindcss/forms": "^0.5.10",
     "better-sqlite3": "^8.5.0",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
@@ -25,6 +27,8 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.0",
-    "nodemon": "^3.0.1"
+    "find-process": "^1.4.10",
+    "nodemon": "^3.0.1",
+    "ps-node": "^0.1.6"
   }
 }

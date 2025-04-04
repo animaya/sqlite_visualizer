@@ -1,10 +1,11 @@
-import { Outlet } from 'react-router-dom'
-import Sidebar from '../components/common/Sidebar'
+import { FC } from 'react';
+import { Outlet } from 'react-router-dom';
+import Sidebar from '../components/common/Sidebar';
 
 /**
  * Main application layout with sidebar navigation
  */
-function MainLayout() {
+const MainLayout: FC = () => {
   return (
     <div className="h-screen flex overflow-hidden bg-slate-50">
       {/* Sidebar */}
@@ -17,7 +18,7 @@ function MainLayout() {
         </main>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default MainLayout
+export default MainLayout;

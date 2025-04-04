@@ -5,12 +5,13 @@
  */
 
 const fs = require('fs');
-const Database = require('better-sqlite3');
+const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
 
 /**
  * Get the size of a SQLite database file
  * @param {string} dbPath - Path to the database file
- * @returns {number} - Size of the database file in bytes
+ * @returns {number} Size in bytes
  */
 function getDatabaseSize(dbPath) {
   try {
@@ -25,221 +26,525 @@ function getDatabaseSize(dbPath) {
 /**
  * Validate a SQLite database file
  * @param {string} dbPath - Path to the database file
- * @returns {boolean} - True if valid, false otherwise
+ * @returns {boolean} True if valid
  */
 function validateDatabase(dbPath) {
-  try {
-    // Check if file exists
-    if (!fs.existsSync(dbPath)) {
-      return false;
+  return new Promise((resolve) => {
+    try {
+      // Check if file exists
+      if (!fs.existsSync(dbPath)) {
+        console.error(`Database file not found: ${dbPath}`);
+        resolve(false);
+        return;
+      }
+      
+      // Try to open the database
+      const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+        if (err) {
+          console.error(`Error opening database: ${err.message}`);
+          resolve(false);
+          return;
+        }
+        
+        // Try a simple query
+        db.get('SELECT sqlite_version()', [], (err, row) => {
+          db.close();
+          
+          if (err) {
+            console.error(`Error validating database: ${err.message}`);
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        });
+      });
+    } catch (error) {
+      console.error(`Error validating database: ${error.message}`);
+      resolve(false);
     }
-    
-    // Check file size (empty files are not valid databases)
-    const stats = fs.statSync(dbPath);
-    if (stats.size === 0) {
-      return false;
-    }
-    
-    // Try to open the database
-    const db = new Database(dbPath, { readonly: true });
-    
-    // Run a simple query to validate it's a SQLite database
-    db.prepare('SELECT sqlite_version() AS version').get();
-    
-    // Close the connection
-    db.close();
-    
-    return true;
-  } catch (error) {
-    console.error(`Database validation error: ${error.message}`);
-    return false;
-  }
+  });
 }
 
 /**
  * Get the number of tables in a database
  * @param {Object} db - Database connection
- * @returns {number} - The number of tables
+ * @returns {Promise<number>} Table count
  */
 function getTableCount(db) {
-  try {
-    const result = db.prepare(`
-      SELECT COUNT(*) as count 
-      FROM sqlite_master 
-      WHERE type='table' AND name NOT LIKE 'sqlite_%'
-    `).get();
-    
-    return result.count;
-  } catch (error) {
-    console.error(`Error counting tables: ${error.message}`);
-    return 0;
-  }
+  return new Promise((resolve) => {
+    try {
+      db.get(`
+        SELECT COUNT(*) as count 
+        FROM sqlite_master 
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+      `, [], (err, row) => {
+        if (err) {
+          console.error(`Error counting tables: ${err.message}`);
+          resolve(0);
+          return;
+        }
+        
+        resolve(row.count);
+      });
+    } catch (error) {
+      console.error(`Error counting tables: ${error.message}`);
+      resolve(0);
+    }
+  });
 }
 
 /**
  * Create a safe read-only connection to a database
  * @param {string} dbPath - Path to the database file
- * @returns {Object|null} - Database connection or null
+ * @returns {Promise<Object|null>} Database connection
  */
 function createReadOnlyConnection(dbPath) {
-  try {
-    const db = new Database(dbPath, { 
-      readonly: true,
-      fileMustExist: true
-    });
-    
-    // Enable foreign keys
-    db.pragma('foreign_keys = ON');
-    
-    return db;
-  } catch (error) {
-    console.error(`Error creating read-only connection: ${error.message}`);
-    return null;
-  }
+  return new Promise((resolve) => {
+    try {
+      // Check if file exists
+      if (!fs.existsSync(dbPath)) {
+        console.error(`Database file not found: ${dbPath}`);
+        resolve(null);
+        return;
+      }
+      
+      // Open database in read-only mode
+      const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+        if (err) {
+          console.error(`Error opening database: ${err.message}`);
+          resolve(null);
+          return;
+        }
+        
+        // Enable foreign keys
+        db.run('PRAGMA foreign_keys = ON');
+        db.run('PRAGMA busy_timeout = 5000');
+        
+        // Add promise-based query helpers to the db object
+        db.allAsync = (sql, params = []) => {
+          return new Promise((resolve, reject) => {
+            db.all(sql, params, (err, rows) => {
+              if (err) reject(err);
+              else resolve(rows);
+            });
+          });
+        };
+        
+        db.getAsync = (sql, params = []) => {
+          return new Promise((resolve, reject) => {
+            db.get(sql, params, (err, row) => {
+              if (err) reject(err);
+              else resolve(row);
+            });
+          });
+        };
+        
+        db.runAsync = (sql, params = []) => {
+          return new Promise((resolve, reject) => {
+            db.run(sql, params, function(err) {
+              if (err) reject(err);
+              else resolve({ lastID: this.lastID, changes: this.changes });
+            });
+          });
+        };
+        
+        db.prepareAsync = (sql) => {
+          const stmt = db.prepare(sql);
+          
+          return {
+            all: (params = []) => {
+              return new Promise((resolve, reject) => {
+                stmt.all(params, (err, rows) => {
+                  if (err) reject(err);
+                  else resolve(rows);
+                });
+              });
+            },
+            get: (params = []) => {
+              return new Promise((resolve, reject) => {
+                stmt.get(params, (err, row) => {
+                  if (err) reject(err);
+                  else resolve(row);
+                });
+              });
+            },
+            run: (params = []) => {
+              return new Promise((resolve, reject) => {
+                stmt.run(params, function(err) {
+                  if (err) reject(err);
+                  else resolve({ lastID: this.lastID, changes: this.changes });
+                });
+              });
+            },
+            finalize: () => {
+              return new Promise((resolve, reject) => {
+                stmt.finalize((err) => {
+                  if (err) reject(err);
+                  else resolve();
+                });
+              });
+            }
+          };
+        };
+        
+        resolve(db);
+      });
+    } catch (error) {
+      console.error(`Error creating database connection: ${error.message}`);
+      resolve(null);
+    }
+  });
 }
 
 /**
- * Parse SQLite column types
+ * Parse SQLite column types to more useful information
  * @param {string} typeName - SQLite type name
- * @returns {Object} - Type information
+ * @returns {Object} Type information
  */
 function parseColumnType(typeName) {
-  // Convert to lowercase for case-insensitive comparison
-  const typeNameLower = typeName.toLowerCase();
+  if (!typeName) {
+    return {
+      type: 'unknown',
+      jsType: 'string',
+      isNumeric: false,
+      isDate: false,
+      isText: true
+    };
+  }
   
-  // Default result
-  const result = {
+  // Normalize type name
+  const type = typeName.toUpperCase();
+  
+  // Check for numeric types
+  if (
+    type.includes('INT') || 
+    type.includes('REAL') || 
+    type.includes('FLOA') || 
+    type.includes('DOUB') || 
+    type.includes('NUM') ||
+    type.includes('DECI')
+  ) {
+    return {
+      type: typeName,
+      jsType: 'number',
+      isNumeric: true,
+      isDate: false,
+      isText: false
+    };
+  }
+  
+  // Check for date/time types
+  if (
+    type.includes('DATE') || 
+    type.includes('TIME') || 
+    type.includes('TIMESTAMP')
+  ) {
+    return {
+      type: typeName,
+      jsType: 'date',
+      isNumeric: false,
+      isDate: true,
+      isText: false
+    };
+  }
+  
+  // Check for boolean types
+  if (type.includes('BOOL')) {
+    return {
+      type: typeName,
+      jsType: 'boolean',
+      isNumeric: false,
+      isDate: false,
+      isText: false
+    };
+  }
+  
+  // Default to text type
+  return {
     type: typeName,
     jsType: 'string',
     isNumeric: false,
     isDate: false,
     isText: true
   };
-  
-  // Determine type category
-  if (typeNameLower.includes('int') || 
-      typeNameLower.includes('float') || 
-      typeNameLower.includes('double') || 
-      typeNameLower.includes('real') || 
-      typeNameLower.includes('numeric') || 
-      typeNameLower.includes('decimal')) {
-    result.jsType = 'number';
-    result.isNumeric = true;
-    result.isText = false;
-  } else if (typeNameLower.includes('date') || 
-             typeNameLower.includes('time') || 
-             typeNameLower.includes('timestamp')) {
-    result.jsType = 'date';
-    result.isDate = true;
-    result.isText = false;
-  } else if (typeNameLower.includes('bool')) {
-    result.jsType = 'boolean';
-    result.isText = false;
-  }
-  
-  return result;
 }
 
 /**
- * Get table schema information
+ * Get sample data with appropriate types for a column
  * @param {Object} db - Database connection
  * @param {string} tableName - Table name
- * @returns {Object} - Table schema information
+ * @param {string} columnName - Column name
+ * @param {number} limit - Number of sample rows
+ * @returns {Promise<Array>} Column sample data
  */
-function getTableSchema(db, tableName) {
-  try {
-    // Get column information
-    const columns = db.prepare(`PRAGMA table_info("${tableName}")`).all();
-    
-    // Map columns to a more usable format
-    const mappedColumns = columns.map(col => {
-      const typeInfo = parseColumnType(col.type);
-      return {
-        name: col.name,
-        type: col.type,
-        jsType: typeInfo.jsType,
-        isPrimaryKey: col.pk === 1,
-        isNullable: col.notnull === 0,
-        defaultValue: col.dflt_value,
-        isNumeric: typeInfo.isNumeric,
-        isDate: typeInfo.isDate,
-        isText: typeInfo.isText
-      };
-    });
-    
-    // Get foreign key information
-    const foreignKeys = db.prepare(`PRAGMA foreign_key_list("${tableName}")`).all();
-    
-    // Get index information
-    const indices = db.prepare(`PRAGMA index_list("${tableName}")`).all();
-    
-    return {
-      name: tableName,
-      columns: mappedColumns,
-      foreignKeys,
-      indices
-    };
-  } catch (error) {
-    console.error(`Error getting table schema: ${error.message}`);
-    return {
-      name: tableName,
-      columns: [],
-      foreignKeys: [],
-      indices: []
-    };
-  }
+function getColumnSample(db, tableName, columnName, limit = 5) {
+  return new Promise((resolve) => {
+    try {
+      const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
+      const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
+      
+      const query = `
+        SELECT ${escapedColumn}
+        FROM ${escapedTable}
+        WHERE ${escapedColumn} IS NOT NULL
+        LIMIT ?
+      `;
+      
+      db.all(query, [limit], (err, rows) => {
+        if (err) {
+          console.error(`Error getting column sample: ${err.message}`);
+          resolve([]);
+        } else {
+          resolve(rows);
+        }
+      });
+    } catch (error) {
+      console.error(`Error getting column sample: ${error.message}`);
+      resolve([]);
+    }
+  });
 }
 
 /**
- * Check if a string is a SQL injection risk
- * @param {string} value - String to check
- * @returns {boolean} - True if the string is a risk
+ * Get column statistics (min, max, avg, etc.)
+ * @param {Object} db - Database connection
+ * @param {string} tableName - Table name
+ * @param {string} columnName - Column name
+ * @returns {Promise<Object>} Column statistics
  */
-function isSqlInjectionRisk(value) {
-  if (typeof value !== 'string') return false;
-  
-  // Check for common SQL injection patterns
-  const riskPatterns = [
-    /'\s*OR\s*'1=1/i,       // 'OR '1=1
-    /'\s*OR\s*1=1/i,         // 'OR 1=1
-    /'\s*OR\s*'1'='1/i,     // 'OR '1'='1
-    /'\s*OR\s*1='1/i,       // 'OR 1='1
-    /'\s*OR\s*'a'='a/i,     // 'OR 'a'='a
-    /;\s*DROP\s+TABLE/i,     // ; DROP TABLE
-    /;\s*DELETE\s+FROM/i,    // ; DELETE FROM
-    /UNION\s+SELECT/i,      // UNION SELECT
-    /--/,                   // SQL comment
-    /\/\*/,                 // Multi-line comment start
-    /EXEC\s+xp_/i,          // SQL Server stored procedure execution
-    /EXEC\s+sp_/i,          // SQL Server stored procedure execution
-    /INTO\s+OUTFILE/i,      // MySQL write to file
-    /LOAD_FILE/i            // MySQL read from file
-  ];
-  
-  return riskPatterns.some(pattern => pattern.test(value));
+function getColumnStats(db, tableName, columnName) {
+  return new Promise((resolve) => {
+    try {
+      const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
+      const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
+      
+      // Get column type from pragma
+      db.all(`PRAGMA table_info(${escapedTable})`, [], (err, columns) => {
+        if (err) {
+          console.error(`Error getting column info: ${err.message}`);
+          resolve({
+            count: 0,
+            distinct_count: 0,
+            null_count: 0,
+            type: 'unknown',
+            isNumeric: false,
+            isDate: false,
+            isText: false
+          });
+          return;
+        }
+        
+        const columnInfo = columns.find(col => col.name === columnName);
+        
+        if (!columnInfo) {
+          console.error(`Column '${columnName}' not found in table '${tableName}'`);
+          resolve({
+            count: 0,
+            distinct_count: 0,
+            null_count: 0,
+            type: 'unknown',
+            isNumeric: false,
+            isDate: false,
+            isText: false
+          });
+          return;
+        }
+        
+        const typeInfo = parseColumnType(columnInfo.type);
+        
+        // For numeric columns, get statistics
+        if (typeInfo.isNumeric) {
+          db.get(`
+            SELECT
+              COUNT(${escapedColumn}) as count,
+              MIN(${escapedColumn}) as min,
+              MAX(${escapedColumn}) as max,
+              AVG(${escapedColumn}) as avg,
+              SUM(${escapedColumn}) as sum
+            FROM ${escapedTable}
+            WHERE ${escapedColumn} IS NOT NULL
+          `, [], (err, stats) => {
+            if (err) {
+              console.error(`Error getting column statistics: ${err.message}`);
+              resolve({
+                count: 0,
+                distinct_count: 0,
+                null_count: 0,
+                type: columnInfo.type,
+                ...typeInfo
+              });
+              return;
+            }
+            
+            // Get count of distinct values
+            db.get(`
+              SELECT COUNT(DISTINCT ${escapedColumn}) as distinct_count
+              FROM ${escapedTable}
+              WHERE ${escapedColumn} IS NOT NULL
+            `, [], (err, distinctResult) => {
+              if (err) {
+                console.error(`Error getting distinct count: ${err.message}`);
+                resolve({
+                  ...stats,
+                  distinct_count: 0,
+                  type: columnInfo.type,
+                  ...typeInfo
+                });
+                return;
+              }
+              
+              resolve({
+                ...stats,
+                distinct_count: distinctResult.distinct_count,
+                type: columnInfo.type,
+                ...typeInfo
+              });
+            });
+          });
+        } else {
+          // For non-numeric columns, just get counts
+          db.get(`
+            SELECT
+              COUNT(${escapedColumn}) as count,
+              COUNT(DISTINCT ${escapedColumn}) as distinct_count
+            FROM ${escapedTable}
+            WHERE ${escapedColumn} IS NOT NULL
+          `, [], (err, counts) => {
+            if (err) {
+              console.error(`Error getting column counts: ${err.message}`);
+              resolve({
+                count: 0,
+                distinct_count: 0,
+                null_count: 0,
+                type: columnInfo.type,
+                ...typeInfo
+              });
+              return;
+            }
+            
+            // Get null count
+            db.get(`
+              SELECT COUNT(*) as null_count
+              FROM ${escapedTable}
+              WHERE ${escapedColumn} IS NULL
+            `, [], (err, nullResult) => {
+              if (err) {
+                console.error(`Error getting null count: ${err.message}`);
+                resolve({
+                  ...counts,
+                  null_count: 0,
+                  type: columnInfo.type,
+                  ...typeInfo
+                });
+                return;
+              }
+              
+              resolve({
+                ...counts,
+                null_count: nullResult.null_count,
+                type: columnInfo.type,
+                ...typeInfo
+              });
+            });
+          });
+        }
+      });
+    } catch (error) {
+      console.error(`Error getting column statistics: ${error.message}`);
+      resolve({
+        count: 0,
+        distinct_count: 0,
+        null_count: 0,
+        type: 'unknown',
+        isNumeric: false,
+        isDate: false,
+        isText: false
+      });
+    }
+  });
 }
 
 /**
- * Sanitize a table or column name for safe use in SQL queries
- * @param {string} name - Table or column name
- * @returns {string} - Sanitized name
+ * Check if a field contains date values
+ * @param {Object} db - Database connection
+ * @param {string} tableName - Table name
+ * @param {string} columnName - Column name
+ * @returns {Promise<boolean>} True if field contains dates
  */
-function sanitizeIdentifier(name) {
-  if (typeof name !== 'string') {
-    throw new Error('Invalid identifier');
-  }
-  
-  // Check for SQL injection risks
-  if (isSqlInjectionRisk(name)) {
-    throw new Error('SQL injection risk detected');
-  }
-  
-  // Allow only alphanumeric characters, underscore, and dollar sign
-  if (!/^[a-zA-Z0-9_$]+$/.test(name)) {
-    throw new Error('Invalid identifier format');
-  }
-  
-  return name;
+function isDateField(db, tableName, columnName) {
+  return new Promise((resolve) => {
+    try {
+      const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
+      const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
+      
+      // Get column type
+      db.all(`PRAGMA table_info(${escapedTable})`, [], (err, columns) => {
+        if (err) {
+          console.error(`Error getting column info: ${err.message}`);
+          resolve(false);
+          return;
+        }
+        
+        const columnInfo = columns.find(col => col.name === columnName);
+        
+        if (!columnInfo) {
+          resolve(false);
+          return;
+        }
+        
+        // Check type name for date keywords
+        const typeName = columnInfo.type.toUpperCase();
+        if (
+          typeName.includes('DATE') || 
+          typeName.includes('TIME') || 
+          typeName.includes('TIMESTAMP')
+        ) {
+          resolve(true);
+          return;
+        }
+        
+        // If it's a text column, sample some values and check if they're dates
+        if (typeName.includes('TEXT') || typeName.includes('VARCHAR') || typeName.includes('CHAR')) {
+          // Get some sample values
+          db.all(`
+            SELECT DISTINCT ${escapedColumn}
+            FROM ${escapedTable}
+            WHERE ${escapedColumn} IS NOT NULL
+            LIMIT 5
+          `, [], (err, rows) => {
+            if (err) {
+              console.error(`Error getting date samples: ${err.message}`);
+              resolve(false);
+              return;
+            }
+            
+            const samples = rows.map(row => row[columnName]);
+            
+            // Check if all samples match date patterns
+            const datePatterns = [
+              /^\d{4}-\d{2}-\d{2}$/, // ISO date
+              /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, // ISO datetime
+              /^\d{2}\/\d{2}\/\d{4}$/, // US date
+              /^\d{2}\.\d{2}\.\d{4}$/, // European date
+              /^\d{2}-\d{2}-\d{4}$/ // Another common format
+            ];
+            
+            const isDate = samples.length > 0 && samples.every(sample => {
+              if (typeof sample !== 'string') return false;
+              return datePatterns.some(pattern => pattern.test(sample));
+            });
+            
+            resolve(isDate);
+          });
+        } else {
+          resolve(false);
+        }
+      });
+    } catch (error) {
+      console.error(`Error checking if field contains dates: ${error.message}`);
+      resolve(false);
+    }
+  });
 }
 
 module.exports = {
@@ -248,7 +553,7 @@ module.exports = {
   getTableCount,
   createReadOnlyConnection,
   parseColumnType,
-  getTableSchema,
-  isSqlInjectionRisk,
-  sanitizeIdentifier
+  getColumnSample,
+  getColumnStats,
+  isDateField
 };

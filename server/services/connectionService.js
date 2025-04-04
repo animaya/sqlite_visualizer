@@ -4,7 +4,7 @@
  * Handles database connection management, storage, and health checks
  */
 
-const Database = require('better-sqlite3');
+const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const appDbService = require('./appDbService');
@@ -20,7 +20,7 @@ const activeConnections = new Map();
  */
 async function getAllConnections() {
   try {
-    const connections = connectionModel.findAll();
+    const connections = await connectionModel.findAll();
     return connections;
   } catch (error) {
     console.error('Error retrieving connections:', error);
@@ -55,7 +55,7 @@ async function createConnection(connectionData) {
     }
     
     // Validate that the file is a valid SQLite database
-    const isValid = dbUtils.validateDatabase(connectionData.path);
+    const isValid = await dbUtils.validateDatabase(connectionData.path);
     if (!isValid) {
       throw new Error('Invalid SQLite database file');
     }
@@ -64,12 +64,14 @@ async function createConnection(connectionData) {
     const sizeBytes = dbUtils.getDatabaseSize(connectionData.path);
     
     // Create a temporary connection to get table count
-    const tempConnection = new Database(connectionData.path, { readonly: true });
-    const tableCount = dbUtils.getTableCount(tempConnection);
-    tempConnection.close();
+    const tempDb = new sqlite3.Database(connectionData.path, sqlite3.OPEN_READONLY);
+    const tableCount = await dbUtils.getTableCount(tempDb);
+    
+    // Close the temporary connection
+    tempDb.close();
     
     // Save connection to database
-    const newConnection = connectionModel.create({
+    const newConnection = await connectionModel.create({
       name: connectionData.name,
       path: connectionData.path,
       size_bytes: sizeBytes,
@@ -93,14 +95,14 @@ async function createConnection(connectionData) {
  */
 async function getConnectionById(id) {
   try {
-    const connection = connectionModel.findById(id);
+    const connection = await connectionModel.findById(id);
     
     if (!connection) {
       throw new Error(`Connection with ID ${id} not found`);
     }
     
     // Update last accessed timestamp
-    connectionModel.update(id, {
+    await connectionModel.update(id, {
       last_accessed: new Date().toISOString()
     });
     
@@ -122,11 +124,16 @@ async function deleteConnection(id) {
     // Close active connection if it exists
     if (activeConnections.has(id)) {
       const conn = activeConnections.get(id);
-      conn.close();
+      
+      // Different close method for sqlite3
+      conn.close((err) => {
+        if (err) console.error(`Error closing connection ${id}:`, err);
+      });
+      
       activeConnections.delete(id);
     }
     
-    const result = connectionModel.remove(id);
+    const result = await connectionModel.remove(id);
     
     if (!result) {
       throw new Error(`Failed to delete connection with ID ${id}`);
@@ -157,7 +164,7 @@ async function checkDatabaseHealth(id) {
     // Check that the file still exists
     if (!fs.existsSync(connection.path)) {
       // Update connection status
-      connectionModel.update(id, { is_valid: false });
+      await connectionModel.update(id, { is_valid: false });
       
       return {
         size_bytes: 0,
@@ -175,16 +182,27 @@ async function checkDatabaseHealth(id) {
     let tableCount = 0;
     
     try {
-      const tempConnection = new Database(connection.path, { readonly: true });
-      tableCount = dbUtils.getTableCount(tempConnection);
-      tempConnection.close();
+      // Create a temporary connection using sqlite3
+      const tempDb = new sqlite3.Database(connection.path, sqlite3.OPEN_READONLY, (err) => {
+        if (err) {
+          console.error(`Error opening database ${connection.path}:`, err);
+          isValid = false;
+        }
+      });
+      
+      if (isValid) {
+        tableCount = await dbUtils.getTableCount(tempDb);
+        
+        // Close the temporary connection
+        tempDb.close();
+      }
     } catch (error) {
       console.error(`Error connecting to database at ${connection.path}:`, error);
       isValid = false;
     }
     
     // Update connection in database
-    connectionModel.update(id, {
+    await connectionModel.update(id, {
       size_bytes: sizeBytes,
       table_count: tableCount,
       is_valid: isValid
@@ -225,18 +243,22 @@ async function getConnection(id) {
     // Check if database file still exists
     if (!fs.existsSync(connection.path)) {
       // Update connection status
-      connectionModel.update(id, { is_valid: false });
+      await connectionModel.update(id, { is_valid: false });
       throw new Error(`Database file not found at path: ${connection.path}`);
     }
     
     // Create a new connection (readonly for safety)
-    const dbConnection = dbUtils.createReadOnlyConnection(connection.path);
+    const dbConnection = await dbUtils.createReadOnlyConnection(connection.path);
+    
+    if (!dbConnection) {
+      throw new Error(`Failed to create connection to database at ${connection.path}`);
+    }
     
     // Store in active connections map
     activeConnections.set(id, dbConnection);
     
     // Update last accessed timestamp
-    connectionModel.update(id, {
+    await connectionModel.update(id, {
       last_accessed: new Date().toISOString()
     });
     

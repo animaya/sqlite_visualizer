@@ -1,9 +1,10 @@
-import { NavLink } from 'react-router-dom'
+import { FC } from 'react';
+import { NavLink } from 'react-router-dom';
 
 /**
  * Application sidebar navigation component
  */
-function Sidebar() {
+const Sidebar: FC = () => {
   return (
     <div className="w-64 bg-white border-r border-slate-200 flex flex-col">
       {/* Logo */}
@@ -53,7 +54,6 @@ function Sidebar() {
                     : 'text-slate-700 hover:bg-slate-100'
                 }`
               }
-              end
             >
               Saved Visualizations
             </NavLink>
@@ -80,7 +80,7 @@ function Sidebar() {
         <div className="text-xs text-slate-500">SQLite Visualizer v0.1.0</div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Sidebar
+export default Sidebar;

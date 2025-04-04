@@ -10,6 +10,9 @@ const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const net = require('net');
+const fs = require('fs');
+const os = require('os');
 
 // Import routes
 const connectionsRoutes = require('./routes/connections');
@@ -22,11 +25,63 @@ const exportRoutes = require('./routes/export');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
-const PORT = process.env.PORT || 8765;
+const DEFAULT_PORT = process.env.PORT || 8765;
+const PORT_INFO_FILE = path.join(os.tmpdir(), 'sqlite-visualizer-server-port.txt');
+
+/**
+ * Checks if a port is in use
+ * @param {number} port - The port to check
+ * @returns {Promise<boolean>} - True if the port is available, false if it's in use
+ */
+const isPortAvailable = (port) => {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    
+    server.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
+    
+    server.once('listening', () => {
+      server.close();
+      resolve(true);
+    });
+    
+    server.listen(port);
+  });
+};
+
+/**
+ * Find an available port starting from the default port
+ * @param {number} startPort - The port to start checking from
+ * @returns {Promise<number>} - An available port
+ */
+const findAvailablePort = async (startPort) => {
+  let port = startPort;
+  const MAX_PORT = startPort + 50; // Don't check indefinitely
+  
+  while (port < MAX_PORT) {
+    const available = await isPortAvailable(port);
+    if (available) {
+      return port;
+    }
+    port++;
+  }
+  
+  // If we can't find a free port, return the original port and let the system handle the error
+  console.warn(`Could not find an available port. Will try using the default port: ${startPort}`);
+  return startPort;
+};
 
 // Middleware
 app.use(cors());
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -50,9 +105,83 @@ if (process.env.NODE_ENV === 'production') {
 // Error handling
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Start server with graceful handling
+let server = null;
 
-module.exports = app;
+const startServer = async () => {
+  try {
+    const availablePort = await findAvailablePort(DEFAULT_PORT);
+    
+    server = app.listen(availablePort, () => {
+      console.log(`Server running on port ${availablePort}`);
+      
+      // Save the port to a file that can be read by other processes
+      try {
+        fs.writeFileSync(PORT_INFO_FILE, availablePort.toString());
+      } catch (err) {
+        console.warn('Failed to write port info file:', err);
+      }
+      
+      // Export the actual port for the client to use
+      process.env.ACTUAL_SERVER_PORT = availablePort.toString();
+    });
+    
+    // Handle graceful shutdown
+    const gracefulShutdown = () => {
+      console.log('Received shutdown signal, closing server...');
+      
+      // Remove the port info file
+      try {
+        if (fs.existsSync(PORT_INFO_FILE)) {
+          fs.unlinkSync(PORT_INFO_FILE);
+        }
+      } catch (err) {
+        console.warn('Failed to remove port info file:', err);
+      }
+      
+      server.close(() => {
+        console.log('Server closed successfully');
+        process.exit(0);
+      });
+      
+      // Force close after 10s if graceful shutdown fails
+      setTimeout(() => {
+        console.error('Could not close connections in time, forcefully shutting down');
+        process.exit(1);
+      }, 10000);
+    };
+    
+    // Listen for termination signals
+    process.on('SIGTERM', gracefulShutdown);
+    process.on('SIGINT', gracefulShutdown);
+    
+    return server;
+  } catch (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  }
+};
+
+// Update the start-dev.js script to read the server port
+const getServerPort = () => {
+  try {
+    if (fs.existsSync(PORT_INFO_FILE)) {
+      const port = fs.readFileSync(PORT_INFO_FILE, 'utf8');
+      return parseInt(port, 10);
+    }
+  } catch (err) {
+    console.warn('Failed to read server port info file:', err);
+  }
+  
+  return null;
+};
+
+// Export the getServerPort function for other modules to use
+app.getServerPort = getServerPort;
+
+// Start server if this file is run directly
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app, startServer, getServerPort };
