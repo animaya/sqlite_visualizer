@@ -142,7 +142,10 @@ function Connections() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Connection Form */}
         <div className="md:col-span-1">
-          <ConnectionForm onAddConnection={handleAddConnection} />
+          <ConnectionForm 
+            onAddConnection={handleAddConnection} 
+            recentPaths={connections.map(conn => conn.path)}
+          />
         </div>
         
         {/* Connection List */}
