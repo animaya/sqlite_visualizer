@@ -70,8 +70,10 @@ function SavedVisualizations() {
   // Load visualization previews after we have the visualization list
   useEffect(() => {
     const loadVisualizationPreviews = async () => {
-      // Only load previews for the first few visualizations to avoid too many requests
-      const visualizationsToPreview = visualizations.slice(0, 6);
+      // Only load previews for visualizations with valid connection_id
+      const visualizationsToPreview = visualizations
+        .filter(viz => viz.connection_id) // Filter out visualizations with no connection_id
+        .slice(0, 6); // Limit to first 6 to avoid too many requests
       
       for (const viz of visualizationsToPreview) {
         await generatePreviewData(viz);
@@ -87,11 +89,26 @@ function SavedVisualizations() {
   const generatePreviewData = async (visualization: Visualization) => {
     if (previewData[visualization.id]) return;
     
+    // Skip if connection_id or table_name is missing
+    if (!visualization.connection_id || !visualization.table_name) {
+      console.warn(`Skipping preview for visualization ${visualization.id}: Missing connection_id or table_name`);
+      setPreviewData(prev => ({ ...prev, [visualization.id]: null }));
+      return;
+    }
+    
     try {
       setPreviewLoading(prev => ({ ...prev, [visualization.id]: true }));
       
       // Get the config data
-      const config = JSON.parse(visualization.config);
+      let config;
+      try {
+        config = JSON.parse(visualization.config);
+      } catch (err) {
+        console.error(`Failed to parse config for visualization ${visualization.id}:`, err);
+        setPreviewData(prev => ({ ...prev, [visualization.id]: null }));
+        setPreviewLoading(prev => ({ ...prev, [visualization.id]: false }));
+        return;
+      }
       
       // Fetch a sample of the data from the table
       const tableSample = await visualizationApi.getSampleData(
@@ -110,6 +127,8 @@ function SavedVisualizations() {
       setPreviewData(prev => ({ ...prev, [visualization.id]: chartData }));
     } catch (err) {
       console.error(`Failed to generate preview for visualization ${visualization.id}:`, err);
+      // Set null for the preview data to indicate it failed to load
+      setPreviewData(prev => ({ ...prev, [visualization.id]: null }));
     } finally {
       setPreviewLoading(prev => ({ ...prev, [visualization.id]: false }));
     }
@@ -202,12 +221,25 @@ function SavedVisualizations() {
   
   // Load full visualization data for view mode
   const loadFullVisualizationData = async (visualization: Visualization) => {
+    // Skip if connection_id or table_name is missing
+    if (!visualization.connection_id || !visualization.table_name) {
+      setError("This visualization can't be loaded because it doesn't have a valid connection or table");
+      return;
+    }
+    
     try {
       setFullChartLoading(true);
       setError(null);
       
       // Get the config data
-      const config = JSON.parse(visualization.config);
+      let config;
+      try {
+        config = JSON.parse(visualization.config);
+      } catch (err) {
+        setError("Failed to parse visualization configuration");
+        setFullChartLoading(false);
+        return;
+      }
       
       // Fetch all data from the table for this visualization
       const response = await visualizationApi.getFullData(
@@ -265,8 +297,20 @@ function SavedVisualizations() {
   
   // Handle edit visualization (navigates to the builder with the visualization loaded)
   const handleEditVisualization = (visualization: Visualization) => {
+    // Check if connection_id and table_name exist
+    if (!visualization.connection_id || !visualization.table_name) {
+      toast.error("This visualization can't be edited because it doesn't have a valid connection or table");
+      return;
+    }
+    
     // Parse the config to get the mappings
-    const config = JSON.parse(visualization.config);
+    let config;
+    try {
+      config = JSON.parse(visualization.config);
+    } catch (err) {
+      toast.error("Failed to parse visualization configuration");
+      return;
+    }
     
     navigate('/visualize', { 
       state: { 
@@ -361,7 +405,7 @@ function SavedVisualizations() {
           
           {/* Footer with info */}
           <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
-            <p>Table: <span className="font-medium">{selectedVisualization.table_name}</span></p>
+            <p>Table: <span className="font-medium">{selectedVisualization.table_name || 'Unknown'}</span></p>
             <p>Last updated: <span className="font-medium">{new Date(selectedVisualization.updated_at).toLocaleString()}</span></p>
           </div>
         </div>
@@ -400,7 +444,14 @@ function SavedVisualizations() {
             >
               <div 
                 className="h-48 bg-slate-50 mb-4 rounded flex items-center justify-center relative cursor-pointer"
-                onClick={() => handleViewVisualization(visualization)}
+                onClick={() => {
+                  // Only allow viewing if connection_id and table_name exist
+                  if (visualization.connection_id && visualization.table_name) {
+                    handleViewVisualization(visualization);
+                  } else {
+                    toast.error("This visualization can't be viewed because it doesn't have a valid connection or table");
+                  }
+                }}
               >
                 {previewLoading[visualization.id] ? (
                   <p className="text-slate-400">Loading preview...</p>
@@ -412,42 +463,74 @@ function SavedVisualizations() {
                 ) : (
                   <div className="text-center">
                     <p className="text-slate-400">{visualization.type.charAt(0).toUpperCase() + visualization.type.slice(1)} Chart</p>
-                    <button
-                      className="mt-2 text-xs text-primary hover:underline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        generatePreviewData(visualization);
-                      }}
-                    >
-                      Load Preview
-                    </button>
+                    {visualization.connection_id && visualization.table_name ? (
+                      <button
+                        className="mt-2 text-xs text-primary hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          generatePreviewData(visualization);
+                        }}
+                      >
+                        Load Preview
+                      </button>
+                    ) : (
+                      <p className="mt-2 text-xs text-red-500">
+                        Missing connection or table
+                      </p>
+                    )}
                   </div>
                 )}
                 
-                {/* View overlay on hover */}
-                <div className="absolute inset-0 bg-slate-900 bg-opacity-0 hover:bg-opacity-40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded">
-                  <span className="px-4 py-2 bg-white text-slate-900 font-medium rounded text-sm">
-                    View Full Visualization
-                  </span>
-                </div>
+                {/* View overlay on hover - only show if connection and table exist */}
+                {visualization.connection_id && visualization.table_name && (
+                  <div className="absolute inset-0 bg-slate-900 bg-opacity-0 hover:bg-opacity-40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded">
+                    <span className="px-4 py-2 bg-white text-slate-900 font-medium rounded text-sm">
+                      View Full Visualization
+                    </span>
+                  </div>
+                )}
               </div>
               
               <h3 className="text-lg font-medium text-slate-900 mb-1">{visualization.name}</h3>
               <p className="text-sm text-slate-500 mb-4">
                 {visualization.type.charAt(0).toUpperCase() + visualization.type.slice(1)} chart 
-                using <span className="font-medium">{visualization.table_name}</span> table
+                {visualization.table_name ? (
+                  <> using <span className="font-medium">{visualization.table_name}</span> table</>
+                ) : (
+                  <> <span className="text-red-500">(missing table)</span></>
+                )}
               </p>
               
               <div className="flex flex-wrap gap-2">
                 <button 
-                  className="px-3 py-1.5 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200"
-                  onClick={() => handleViewVisualization(visualization)}
+                  className={`px-3 py-1.5 text-xs ${
+                    visualization.connection_id && visualization.table_name
+                      ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  } rounded`}
+                  onClick={() => {
+                    if (visualization.connection_id && visualization.table_name) {
+                      handleViewVisualization(visualization);
+                    } else {
+                      toast.error("This visualization can't be viewed because it doesn't have a valid connection or table");
+                    }
+                  }}
                 >
                   View
                 </button>
                 <button 
-                  className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                  onClick={() => handleEditVisualization(visualization)}
+                  className={`px-3 py-1.5 text-xs ${
+                    visualization.connection_id && visualization.table_name
+                      ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                      : 'bg-blue-50 text-blue-400 cursor-not-allowed'
+                  } rounded`}
+                  onClick={() => {
+                    if (visualization.connection_id && visualization.table_name) {
+                      handleEditVisualization(visualization);
+                    } else {
+                      toast.error("This visualization can't be edited because it doesn't have a valid connection or table");
+                    }
+                  }}
                 >
                   Edit
                 </button>

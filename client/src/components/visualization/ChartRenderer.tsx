@@ -1,14 +1,35 @@
 import { useRef, useEffect } from 'react';
 import Chart from 'chart.js/auto';
 
+// Define type for chart data
+interface ChartData {
+  labels?: string[];
+  datasets: {
+    label?: string;
+    data: any[];
+    backgroundColor?: string | string[];
+    borderColor?: string;
+    borderWidth?: number;
+    tension?: number;
+    fill?: boolean;
+    pointRadius?: number;
+    pointHoverRadius?: number;
+  }[];
+}
+
+interface ChartRendererProps {
+  type: string;
+  data: ChartData | null;
+}
+
 /**
  * Chart Renderer Component
  * 
  * Renders various types of charts using Chart.js
  */
-function ChartRenderer({ type, data }) {
-  const chartRef = useRef(null);
-  const chartInstance = useRef(null);
+function ChartRenderer({ type, data }: ChartRendererProps) {
+  const chartRef = useRef<HTMLCanvasElement | null>(null);
+  const chartInstance = useRef<Chart | null>(null);
   
   useEffect(() => {
     // Destroy existing chart if it exists
@@ -20,30 +41,32 @@ function ChartRenderer({ type, data }) {
     if (chartRef.current && data) {
       const ctx = chartRef.current.getContext('2d');
       
-      chartInstance.current = new Chart(ctx, {
-        type: type,
-        data: data,
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'bottom',
-              labels: {
-                boxWidth: 12,
-                padding: 15
+      if (ctx) {
+        chartInstance.current = new Chart(ctx, {
+          type: type,
+          data: data,
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  boxWidth: 12,
+                  padding: 15
+                }
+              },
+              tooltip: {
+                backgroundColor: '#0F172A',
+                titleColor: '#FFFFFF',
+                bodyColor: '#FFFFFF',
+                padding: 12,
+                cornerRadius: 4
               }
-            },
-            tooltip: {
-              backgroundColor: '#0F172A',
-              titleColor: '#FFFFFF',
-              bodyColor: '#FFFFFF',
-              padding: 12,
-              cornerRadius: 4
             }
           }
-        }
-      });
+        });
+      }
     }
     
     // Cleanup on unmount
