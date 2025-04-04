@@ -247,65 +247,18 @@ async function getConnection(id) {
       throw new Error(`Database file not found at path: ${connection.path}`);
     }
     
-    // Create a new connection (readonly for safety)
-    return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(connection.path, sqlite3.OPEN_READONLY, async (err) => {
-        if (err) {
-          console.error(`Error opening database: ${err.message}`);
-          reject(new Error(`Failed to connect to database: ${err.message}`));
-          return;
-        }
-        
-        // Enable foreign keys
-        db.run('PRAGMA foreign_keys = ON');
-        
-        // Add promise wrapper methods for convenience
-        const originalAll = db.all.bind(db);
-        db.all = (sql, params = []) => {
-          return new Promise((resolve, reject) => {
-            originalAll(sql, params, (err, rows) => {
-              if (err) reject(err);
-              else resolve(rows || []);
-            });
-          });
-        };
-        
-        const originalGet = db.get.bind(db);
-        db.get = (sql, params = []) => {
-          return new Promise((resolve, reject) => {
-            originalGet(sql, params, (err, row) => {
-              if (err) reject(err);
-              else resolve(row);
-            });
-          });
-        };
-        
-        const originalRun = db.run.bind(db);
-        db.run = (sql, params = []) => {
-          return new Promise((resolve, reject) => {
-            originalRun(sql, params, function(err) {
-              if (err) reject(err);
-              else resolve({ lastID: this.lastID, changes: this.changes });
-            });
-          });
-        };
-        
-        // Store in active connections map
-        activeConnections.set(id, db);
-        
-        // Update last accessed timestamp
-        try {
-          await connectionModel.update(id, {
-            last_accessed: new Date().toISOString()
-          });
-        } catch (updateError) {
-          console.warn(`Warning: Failed to update last_accessed: ${updateError.message}`);
-          // Continue anyway - this is not critical
-        }
-        
-        resolve(db);
-      });
+    // Create a simple database connection
+    const db = new sqlite3.Database(connection.path, sqlite3.OPEN_READONLY);
+    
+    // Store in active connections map
+    activeConnections.set(id, db);
+    
+    // Update last accessed timestamp
+    await connectionModel.update(id, {
+      last_accessed: new Date().toISOString()
     });
+    
+    return db;
   } catch (error) {
     console.error(`Error getting connection for ID ${id}:`, error);
     throw error;
