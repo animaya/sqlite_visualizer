@@ -2,6 +2,7 @@ import { FC, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Connection, Template } from '../types';
 import { connectionApi, templateApi } from '../services/api';
+import TemplateList from '../components/templates/TemplateList';
 
 /**
  * Templates Page
@@ -46,7 +47,7 @@ const Templates: FC = () => {
       return;
     }
     
-    // Navigate to a template configuration page or show modal
+    // Navigate to a template configuration page
     navigate(`/templates/${templateId}/apply?connection=${selectedConnection}`);
   };
   
@@ -78,46 +79,20 @@ const Templates: FC = () => {
             </option>
           ))}
         </select>
+        {!selectedConnection && (
+          <p className="mt-2 text-sm text-slate-500">
+            Please select a database connection to apply templates
+          </p>
+        )}
       </div>
       
-      {/* Templates Grid */}
-      {loading ? (
-        <div className="text-center p-6">
-          <p className="text-slate-500">Loading templates...</p>
-        </div>
-      ) : templates.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {templates.map((template) => (
-            <div key={template.id} className="bg-white p-6 rounded-md border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-medium text-slate-900 mb-1">{template.name}</h3>
-              <p className="text-sm text-slate-500 mb-4">
-                {template.description}
-              </p>
-              <div className="text-xs text-slate-500 mb-4">
-                <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 rounded mr-2">
-                  {template.type} Chart
-                </span>
-                {template.category && (
-                  <span className="inline-block px-2 py-1 bg-green-50 text-green-700 rounded">
-                    {template.category}
-                  </span>
-                )}
-              </div>
-              <button 
-                className="w-full px-4 py-2 bg-primary text-white rounded text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!selectedConnection}
-                onClick={() => handleApplyTemplate(template.id)}
-              >
-                Apply Template
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white p-6 rounded-md border border-slate-200 text-center">
-          <p className="text-slate-500">No templates available</p>
-        </div>
-      )}
+      {/* Templates List */}
+      <TemplateList 
+        templates={templates}
+        selectedConnectionId={selectedConnection}
+        onApplyTemplate={handleApplyTemplate}
+        isLoading={loading}
+      />
     </div>
   );
 };

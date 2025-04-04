@@ -6,6 +6,7 @@ import TableViewer from './pages/TableViewer';
 import VisualizationBuilder from './pages/VisualizationBuilder';
 import SavedVisualizations from './pages/SavedVisualizations';
 import Templates from './pages/Templates';
+import TemplateApplication from './pages/TemplateApplication';
 import NotFound from './pages/NotFound';
 
 const App: FC = () => {
@@ -17,6 +18,7 @@ const App: FC = () => {
         <Route path="visualize" element={<VisualizationBuilder />} />
         <Route path="gallery" element={<SavedVisualizations />} />
         <Route path="templates" element={<Templates />} />
+        <Route path="templates/:templateId/apply" element={<TemplateApplication />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
