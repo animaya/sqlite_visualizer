@@ -1,11 +1,14 @@
-import { FC, useEffect, useRef } from 'react';
+import { FC, useEffect, useRef, useState } from 'react';
 import Chart from 'chart.js/auto';
 import { ChartData } from '../../types';
+import ExportButton from '../common/ExportButton';
 
 interface ChartPreviewProps {
   type: string;
   data: ChartData;
   options?: Record<string, any>;
+  visualizationId?: number;
+  showExport?: boolean;
 }
 
 /**
@@ -13,7 +16,13 @@ interface ChartPreviewProps {
  * 
  * Renders a chart with Chart.js
  */
-const ChartPreview: FC<ChartPreviewProps> = ({ type, data, options = {} }) => {
+const ChartPreview: FC<ChartPreviewProps> = ({ 
+  type, 
+  data, 
+  options = {}, 
+  visualizationId,
+  showExport = false 
+}) => {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   
@@ -214,7 +223,16 @@ const ChartPreview: FC<ChartPreviewProps> = ({ type, data, options = {} }) => {
   }, [type, data, options]);
   
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full relative">
+      {showExport && visualizationId && (
+        <div className="absolute top-2 right-2 z-10">
+          <ExportButton
+            type="visualization"
+            visualizationId={visualizationId}
+            className="bg-white/80 hover:bg-white shadow-sm"
+          />
+        </div>
+      )}
       <canvas ref={chartRef} />
     </div>
   );

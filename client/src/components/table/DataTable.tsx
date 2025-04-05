@@ -1,5 +1,6 @@
 import { FC, useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronUp, ChevronDown, Search, X, Filter, ArrowLeft, ArrowRight } from 'lucide-react';
+import ExportButton from '../common/ExportButton';
 
 interface DataTableProps {
   data: any[];
@@ -12,6 +13,9 @@ interface DataTableProps {
   loading?: boolean;
   filters?: Record<string, string>;
   highlightPattern?: string;
+  connectionId?: number;
+  tableName?: string;
+  showExport?: boolean;
 }
 
 /**
@@ -34,7 +38,10 @@ const DataTable: FC<DataTableProps> = ({
   onFilterChange,
   loading = false,
   filters = {},
-  highlightPattern = ''
+  highlightPattern = '',
+  connectionId,
+  tableName,
+  showExport = false
 }) => {
   // Keep track of current sort state
   const [currentSort, setCurrentSort] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null);
@@ -383,15 +390,29 @@ const DataTable: FC<DataTableProps> = ({
       
       {/* Pagination */}
       <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between border-t border-slate-200 gap-3">
-        <div className="text-sm text-slate-500">
-          {total > 0 ? (
-            <>
-              Showing <span className="font-medium">{startItem}</span> to{' '}
-              <span className="font-medium">{endItem}</span> of{' '}
-              <span className="font-medium">{total}</span> results
-            </>
-          ) : (
-            <span>No results</span>
+        <div className="flex items-center">
+          <div className="text-sm text-slate-500 mr-4">
+            {total > 0 ? (
+              <>
+                Showing <span className="font-medium">{startItem}</span> to{' '}
+                <span className="font-medium">{endItem}</span> of{' '}
+                <span className="font-medium">{total}</span> results
+              </>
+            ) : (
+              <span>No results</span>
+            )}
+          </div>
+          
+          {/* Export Button */}
+          {showExport && connectionId && tableName && total > 0 && (
+            <ExportButton
+              type="table"
+              connectionId={connectionId}
+              tableName={tableName}
+              filters={filters}
+              sort={currentSort}
+              limit={Math.min(10000, total)} // Cap at 10,000 rows or total rows (whichever is smaller)
+            />
           )}
         </div>
         

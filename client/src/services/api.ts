@@ -5,26 +5,9 @@
  */
 import { Connection, Visualization, Template, ApiError } from '../types';
 
-// Detect server port from environment or fallback to default
-const getServerPort = () => {
-  // Always use the default port in development
-  // This ensures we connect to the Express server running on port 8765
-  return 8765;
-};
+import { API_BASE_URL } from '../config';
 
-// Base URL for API requests
-const getApiUrl = () => {
-  if (process.env.NODE_ENV === 'production') {
-    return ''; // Same domain in production
-  }
-  
-  // For development
-  const serverPort = getServerPort();
-  console.log(`Using server port: ${serverPort} for API requests`);
-  return `http://localhost:${serverPort}`;
-};
-
-const API_URL = getApiUrl();
+const API_URL = API_BASE_URL.replace('/api', '');
 
 // Log server connection status
 (async function checkServerAvailability() {
@@ -430,11 +413,65 @@ export const templateApi = {
 
 // Export endpoints
 export const exportApi = {
-  exportVisualization: (visualizationId: string | number): string => 
-    `${API_URL}/api/export/csv/${visualizationId}`,
+  getSupportedFormats: (): Promise<{
+    id: string;
+    name: string;
+    extension: string;
+    mimeType: string;
+  }[]> => 
+    apiRequest<{
+      id: string;
+      name: string;
+      extension: string;
+      mimeType: string;
+    }[]>('/export/formats'),
   
-  exportTable: (connectionId: string | number, tableName: string): string => 
-    `${API_URL}/api/export/csv/table/${connectionId}/${tableName}`,
+  exportVisualization: (visualizationId: string | number, format: string = 'csv'): string => 
+    `${API_URL}/api/export/${format}/${visualizationId}`,
+  
+  exportTable: (
+    connectionId: string | number, 
+    tableName: string, 
+    options: { 
+      format?: string;
+      limit?: number;
+      filter?: Record<string, any>;
+      sort?: { column: string; direction: 'asc' | 'desc' };
+      includeSchema?: boolean;
+    } = {}
+  ): string => {
+    const { format = 'csv', limit, filter, sort, includeSchema } = options;
+    
+    // Build base URL
+    let url = `${API_URL}/api/export/${format}/table/${connectionId}/${tableName}`;
+    
+    // Add query parameters
+    const params = new URLSearchParams();
+    
+    if (limit) {
+      params.append('limit', limit.toString());
+    }
+    
+    if (filter && Object.keys(filter).length > 0) {
+      params.append('filter', JSON.stringify(filter));
+    }
+    
+    if (sort && sort.column) {
+      params.append('sort', JSON.stringify(sort));
+    }
+    
+    if (format === 'json' && includeSchema !== undefined) {
+      params.append('includeSchema', includeSchema.toString());
+    }
+    
+    // Append query parameters if any
+    const queryString = params.toString();
+    if (queryString) {
+      url += `?${queryString}`;
+    }
+    
+    return url;
+  }
 };
 
 // Test server connection
