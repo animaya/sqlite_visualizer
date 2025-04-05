@@ -24,9 +24,6 @@ const exportRoutes = require('./routes/export');
 // Import services needed for initialization
 const appDbService = require('./services/appDbService');
 
-// Import services needed for initialization
-const appDbService = require('./services/appDbService');
-
 // Import error handling middleware
 const errorHandler = require('./middleware/errorHandler');
 
