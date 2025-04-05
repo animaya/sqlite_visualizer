@@ -57,7 +57,9 @@ const TableViewer: FC = () => {
   
   const filters = getFiltersFromParams();
   
-  // Update URL search params when state changes
+  // Update URL search params when state changes.
+  // This keeps the URL in sync with the table view state (pagination, sorting, filtering),
+  // allowing for shareable links to specific table views.
   const updateSearchParams = useCallback((updates: Record<string, string | null>) => {
     const newParams = new URLSearchParams(searchParams);
     

@@ -11,6 +11,14 @@ const Database = require('better-sqlite3');
 
 let db = null;
 
+// --- better-sqlite3 Note ---
+// This service uses 'better-sqlite3', which provides a synchronous API for SQLite.
+// While generally very fast, be aware that long-running queries or slow disk I/O
+// could potentially block the Node.js event loop in high-concurrency scenarios.
+// For this application's intended use case (small team, local databases), this is
+// usually acceptable. Timeouts are implemented in route handlers for longer operations.
+// ---
+
 /**
  * Initialize the application database
  */
@@ -286,10 +294,11 @@ function all(sql, params = []) {
   }
 }
 
-// Initialize database on module load
-initializeDatabase();
+// Note: Database initialization is now called explicitly in server/app.js during startup.
+// initializeDatabase(); // Removed from here
 
 module.exports = {
+  initializeDatabase, // Export for explicit initialization
   getDb,
   closeDatabase,
   run,

@@ -100,7 +100,13 @@ const SavedVisualizations: FC = () => {
           {visualizations.map((visualization) => (
             <div key={visualization.id} className="bg-white p-6 rounded-md border border-slate-200 shadow-sm">
               <div className="h-48 bg-slate-100 mb-4 rounded flex items-center justify-center">
-                {/* Placeholder for visualization preview */}
+                {/* --- Visualization Preview Placeholder ---
+                    Currently, this is just a static placeholder.
+                    TODO: Implement actual chart previews. Considerations:
+                    1. Fetch sample data via visualizationApi.getSampleData on demand? (Potential performance issue with many charts)
+                    2. Generate and cache preview images/data on the backend when saving? (More complex but performant)
+                    3. Use lazy loading (Intersection Observer) to load previews only when visible.
+                --- */}
                 <span className="text-slate-400">Chart Preview</span>
               </div>
               <h3 className="text-lg font-medium text-slate-900 mb-1">{visualization.name}</h3>

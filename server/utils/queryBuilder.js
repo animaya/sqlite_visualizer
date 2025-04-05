@@ -453,6 +453,11 @@ function escapeIdentifier(identifier) {
  * @returns {boolean} True if valid
  */
 function isValidIdentifier(identifier) {
+  // Basic check for common SQL identifiers.
+  // IMPORTANT: This is a basic security measure. Complex scenarios (e.g., user-defined identifiers)
+  // might require more robust validation, potentially checking against actual schema information
+  // or using a dedicated SQL identifier validation library if available.
+  // Thorough testing of filter/sort inputs is crucial.
   if (typeof identifier !== 'string') return false;
   
   // Allowed characters: letters, numbers, underscore

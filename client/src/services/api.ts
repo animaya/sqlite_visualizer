@@ -282,27 +282,16 @@ export const visualizationApi = {
    * @param limit - Max number of records to return (default: 20)
    */
   getSampleData: <T>(connectionId: string | number, tableName: string, mappings: Record<string, string>, limit: number = 20): Promise<T[]> => {
-    try {
-      // Create query params for field selection
-      const fields = Object.values(mappings).filter(Boolean);
-      
-      // Define fields if they exist
-      const params: Record<string, any> = { limit };
-      if (fields.length > 0) {
-        params.fields = fields.join(',');
-      }
-      
-      // Use a simpler approach - just get sample data and return empty array on error
-      return tableApi.getSample<T>(connectionId, tableName, limit)
-        .then(response => response.data)
-        .catch(error => {
-          console.error('Error fetching sample data:', error);
-          return [] as T[];
-        });
-    } catch (error) {
-      console.error('Error in getSampleData:', error);
-      return Promise.resolve([] as T[]);
-    }
+    // Reuses tableApi.getSample for efficiency.
+    // Note: This currently fetches all columns in the sample, not just mapped ones.
+    // If specific field selection is needed for performance, tableApi.getSample would need enhancement.
+    return tableApi.getSample<T>(connectionId, tableName, limit)
+      .then(response => response.data)
+      .catch(error => {
+        console.error(`Error fetching sample data for visualization (table: ${tableName}):`, error);
+        // Return empty array on error to allow UI to handle gracefully
+        return [] as T[];
+      });
   },
   
   /**
@@ -316,35 +305,30 @@ export const visualizationApi = {
     data: T[];
     total: number;
   }> => {
-    try {
-      // Create query params for field selection and pagination
-      const fields = Object.values(mappings).filter(Boolean);
-      
-      // Define query parameters
-      const params: Record<string, any> = { limit, page: 1 };
-      if (fields.length > 0) {
-        params.fields = fields.join(',');
-      }
-      
-      return tableApi.getData<T>(connectionId, tableName, params)
-        .then(response => ({
-          data: response.data,
-          total: response.total
-        }))
-        .catch(error => {
-          console.error('Error fetching full data:', error);
-          return {
-            data: [] as T[],
-            total: 0
-          };
-        });
-    } catch (error) {
-      console.error('Error in getFullData:', error);
-      return Promise.resolve({
-        data: [] as T[],
-        total: 0
+    // Reuses tableApi.getData for efficiency.
+    // Note: This currently fetches all columns, not just mapped ones.
+    // If specific field selection is needed for performance, tableApi.getData would need enhancement
+    // to accept a 'fields' parameter.
+    const params: Record<string, any> = { limit, page: 1 };
+    // Example: If tableApi.getData supported field selection:
+    // const fields = Object.values(mappings).filter(Boolean);
+    // if (fields.length > 0) {
+    //   params.fields = fields.join(',');
+    // }
+
+    return tableApi.getData<T>(connectionId, tableName, params)
+      .then(response => ({
+        data: response.data,
+        total: response.total
+      }))
+      .catch(error => {
+        console.error(`Error fetching full data for visualization (table: ${tableName}):`, error);
+        // Return empty data structure on error
+        return {
+          data: [] as T[],
+          total: 0
+        };
       });
-    }
   }
 };
 

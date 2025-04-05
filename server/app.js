@@ -21,6 +21,16 @@ const visualizationsRoutes = require('./routes/visualizations');
 const templatesRoutes = require('./routes/templates');
 const exportRoutes = require('./routes/export');
 
+// Import routes
+const connectionsRoutes = require('./routes/connections');
+const tablesRoutes = require('./routes/tables');
+const visualizationsRoutes = require('./routes/visualizations');
+const templatesRoutes = require('./routes/templates');
+const exportRoutes = require('./routes/export');
+
+// Import services needed for initialization
+const appDbService = require('./services/appDbService');
+
 // Import error handling middleware
 const errorHandler = require('./middleware/errorHandler');
 
@@ -134,6 +144,11 @@ let server = null;
 
 const startServer = async () => {
   try {
+    // Initialize the application database explicitly before starting the server
+    console.log('Initializing application database...');
+    appDbService.initializeDatabase();
+    console.log('Application database initialized.');
+    
     const availablePort = await findAvailablePort(DEFAULT_PORT);
     
     server = app.listen(availablePort, () => {
@@ -165,6 +180,9 @@ const startServer = async () => {
       
       server.close(() => {
         console.log('Server closed successfully');
+        // Close the application database connection on shutdown
+        appDbService.closeDatabase();
+        console.log('Application database connection closed.');
         process.exit(0);
       });
       

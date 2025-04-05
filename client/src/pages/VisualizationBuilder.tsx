@@ -45,6 +45,13 @@ const VisualizationBuilder: FC = () => {
     templateSourceName ? `${templateSourceName} (from template)` : ''
   );
   
+  // --- State Management Notes ---
+  // This component manages significant state related to data sources,
+  // chart configuration, and the resulting chart data.
+  // If complexity increases, consider refactoring state logic using
+  // React Context with useReducer, Zustand, or Jotai for better organization.
+  // ---
+  
   useEffect(() => {
     // Fetch connections from API
     const fetchConnections = async () => {

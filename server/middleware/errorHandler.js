@@ -20,10 +20,17 @@ function errorHandler(err, req, res, next) {
   let statusCode = err.statusCode || 500;
   let message = err.message || 'Internal Server Error';
   let errors = err.errors || null;
-  let errorDetails = null;
+  let errorDetails = null; // For detailed validation errors, etc.
   
   // Handle specific error types
-  if (err.name === 'ValidationError') {
+  // TODO: Add more specific custom error classes/codes from services (e.g., DatabaseConnectionError, QueryExecutionError)
+  if (err.name === 'DatabaseConnectionError') { // Example specific error
+    statusCode = 503; // Service Unavailable
+    message = 'Database connection failed. Please try again later.';
+  } else if (err.name === 'QueryExecutionError') { // Example specific error
+    statusCode = 400; // Bad Request (likely user query issue)
+    message = 'Failed to execute the database query. Check syntax or parameters.';
+  } else if (err.name === 'ValidationError') {
     // Handle validation library errors (like Mongoose)
     statusCode = 400;
     message = 'Validation Error';
