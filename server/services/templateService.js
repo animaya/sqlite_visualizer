@@ -116,25 +116,31 @@ async function applyTemplate(templateId, connectionId, tableNames, mappings) {
       }
     };
     
+=======
     // Generate data based on template type and config
     let data;
     
-    // Different query logic based on chart type
-    switch (template.type.toLowerCase()) {
-      case 'bar':
-      case 'line':
-        // For bar and line charts, we need to fetch data for the x and y axes
-        data = await generateChartData(connectionId, tables[0], mergedConfig);
-        break;
-        
-      case 'pie':
-      case 'doughnut':
-        // For pie/doughnut charts, we need labels and values
-        data = await generatePieChartData(connectionId, tables[0], mergedConfig);
-        break;
-        
-      default:
-        throw new Error(`Unsupported chart type: ${template.type}`);
+    try {
+      // Different query logic based on chart type
+      switch (template.type.toLowerCase()) {
+        case 'bar':
+        case 'line':
+          // For bar and line charts, we need to fetch data for the x and y axes
+          data = await generateChartData(connectionId, tables[0], mergedConfig);
+          break;
+          
+        case 'pie':
+        case 'doughnut':
+          // For pie/doughnut charts, we need labels and values
+          data = await generatePieChartData(connectionId, tables[0], mergedConfig);
+          break;
+          
+        default:
+          throw new Error(`Unsupported chart type: ${template.type}`);
+      }
+    } catch (error) {
+      console.error(`Error generating chart data for template ${templateId}:`, error);
+      throw new Error(`Failed to generate visualization data: ${error.message}`);
     }
     
     return {
@@ -148,6 +154,7 @@ async function applyTemplate(templateId, connectionId, tableNames, mappings) {
   }
 }
 
+=======
 /**
  * Generate data for bar or line charts
  * @param {string} connectionId - Connection ID
@@ -164,10 +171,32 @@ async function generateChartData(connectionId, tableName, config) {
       throw new Error('X and Y axis mappings are required');
     }
     
+    // Validate that the table exists
+    const tables = await databaseService.getAllTables(connectionId);
+    if (!tables.some(t => t.name === tableName)) {
+      throw new Error(`Table "${tableName}" not found in the database`);
+    }
+    
+    // Validate that the columns exist in the table
+    const schema = await databaseService.getTableSchema(connectionId, tableName);
+    const columnNames = schema.columns.map(c => c.name);
+    
+    if (!columnNames.includes(x)) {
+      throw new Error(`Column "${x}" not found in table "${tableName}"`);
+    }
+    
+    if (!columnNames.includes(y)) {
+      throw new Error(`Column "${y}" not found in table "${tableName}"`);
+    }
+    
+    if (groupBy && !columnNames.includes(groupBy)) {
+      throw new Error(`Group by column "${groupBy}" not found in table "${tableName}"`);
+    }
+    
     // Build query options
     const options = {
       columns: [x, y],
-      limit: parseInt(limit)
+      limit: parseInt(limit) || 10
     };
     
     // Add sorting if specified
@@ -176,11 +205,21 @@ async function generateChartData(connectionId, tableName, config) {
         column: y,
         direction: sort.toLowerCase() === 'asc' ? 'ASC' : 'DESC'
       };
+    } else {
+      // Default sorting for better visualization
+      options.sort = {
+        column: y,
+        direction: 'DESC'
+      };
     }
     
     // Add grouping if specified
     if (groupBy) {
       options.groupBy = groupBy;
+    } else {
+      // If no groupBy is specified but we're visualizing data,
+      // we need to group by the x-axis to avoid duplicate entries
+      options.groupBy = x;
     }
     
     // Execute query to get data
@@ -190,9 +229,22 @@ async function generateChartData(connectionId, tableName, config) {
       options
     );
     
+    if (!result.data || result.data.length === 0) {
+      return {
+        labels: [],
+        datasets: [{
+          label: config.title || y,
+          data: [],
+          backgroundColor: [],
+          borderColor: '#2563EB',
+          borderWidth: 1
+        }]
+      };
+    }
+    
     // Format data for Chart.js
-    const labels = result.data.map(row => row[x]);
-    const values = result.data.map(row => row[y]);
+    const labels = result.data.map(row => row[x]?.toString() || 'Unknown');
+    const values = result.data.map(row => parseFloat(row[y]) || 0);
     
     return {
       labels,
@@ -210,6 +262,7 @@ async function generateChartData(connectionId, tableName, config) {
   }
 }
 
+=======
 /**
  * Generate data for pie or doughnut charts
  * @param {string} connectionId - Connection ID
@@ -226,14 +279,34 @@ async function generatePieChartData(connectionId, tableName, config) {
       throw new Error('Labels and values mappings are required');
     }
     
+    // Validate that the table exists
+    const tables = await databaseService.getAllTables(connectionId);
+    if (!tables.some(t => t.name === tableName)) {
+      throw new Error(`Table "${tableName}" not found in the database`);
+    }
+    
+    // Validate that the columns exist in the table
+    const schema = await databaseService.getTableSchema(connectionId, tableName);
+    const columnNames = schema.columns.map(c => c.name);
+    
+    if (!columnNames.includes(labelField)) {
+      throw new Error(`Label column "${labelField}" not found in table "${tableName}"`);
+    }
+    
+    if (!columnNames.includes(valueField)) {
+      throw new Error(`Value column "${valueField}" not found in table "${tableName}"`);
+    }
+    
     // Build query options
     const options = {
       columns: [labelField, valueField],
-      limit: parseInt(limit),
+      limit: parseInt(limit) || 10,
       sort: {
         column: valueField,
         direction: 'DESC'
-      }
+      },
+      // Group by the label field to avoid duplicate entries
+      groupBy: labelField
     };
     
     // Execute query to get data
@@ -243,15 +316,30 @@ async function generatePieChartData(connectionId, tableName, config) {
       options
     );
     
+    if (!result.data || result.data.length === 0) {
+      return {
+        labels: [],
+        datasets: [{
+          data: [],
+          backgroundColor: []
+        }]
+      };
+    }
+    
     // Format data for Chart.js
-    const labels = result.data.map(row => row[labelField]);
-    const values = result.data.map(row => row[valueField]);
+    const labels = result.data.map(row => row[labelField]?.toString() || 'Unknown');
+    const values = result.data.map(row => parseFloat(row[valueField]) || 0);
+    
+    // Generate colors for the pie segments
+    const colors = generateChartColors(values.length);
     
     return {
       labels,
       datasets: [{
         data: values,
-        backgroundColor: generateChartColors(values.length)
+        backgroundColor: colors,
+        borderColor: colors.map(() => '#FFFFFF'),
+        borderWidth: 1
       }]
     };
   } catch (error) {

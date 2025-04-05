@@ -16,6 +16,25 @@ const Templates: FC = () => {
   const [selectedConnection, setSelectedConnection] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [filteredTemplates, setFilteredTemplates] = useState<Template[]>([]);
+  
+  // Load the last selected connection from localStorage if available
+  useEffect(() => {
+    const savedConnection = localStorage.getItem('selectedConnection');
+    if (savedConnection) {
+      setSelectedConnection(savedConnection);
+    }
+  }, []);
+  
+  // Save selected connection to localStorage when it changes
+  useEffect(() => {
+    if (selectedConnection) {
+      localStorage.setItem('selectedConnection', selectedConnection);
+    }
+  }, [selectedConnection]);
   
   useEffect(() => {
     // Fetch templates and connections from API
@@ -23,13 +42,16 @@ const Templates: FC = () => {
       try {
         setLoading(true);
         
-        const [templatesData, connectionsData] = await Promise.all([
+        const [templatesData, connectionsData, categoriesData] = await Promise.all([
           templateApi.getAll(),
-          connectionApi.getAll()
+          connectionApi.getAll(),
+          templateApi.getCategories()
         ]);
         
         setTemplates(templatesData);
+        setFilteredTemplates(templatesData);
         setConnections(connectionsData);
+        setCategories(categoriesData);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -41,6 +63,27 @@ const Templates: FC = () => {
     fetchData();
   }, []);
   
+  // Apply filters when templates, category, or search term changes
+  useEffect(() => {
+    let filtered = [...templates];
+    
+    // Apply category filter
+    if (selectedCategory) {
+      filtered = filtered.filter(template => template.category === selectedCategory);
+    }
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(template => 
+        template.name.toLowerCase().includes(term) || 
+        (template.description && template.description.toLowerCase().includes(term))
+      );
+    }
+    
+    setFilteredTemplates(filtered);
+  }, [templates, selectedCategory, searchTerm]);
+  
   const handleApplyTemplate = (templateId: string | number) => {
     if (!selectedConnection) {
       setError('Please select a connection first');
@@ -49,6 +92,11 @@ const Templates: FC = () => {
     
     // Navigate to a template configuration page
     navigate(`/templates/${templateId}/apply?connection=${selectedConnection}`);
+  };
+  
+  const handleClearFilters = () => {
+    setSelectedCategory('');
+    setSearchTerm('');
   };
   
   return (
@@ -86,9 +134,67 @@ const Templates: FC = () => {
         )}
       </div>
       
+      {/* Filter Controls */}
+      <div className="bg-white p-6 rounded-md border border-slate-200">
+        <h2 className="text-lg font-medium text-slate-900 mb-4">Filter Templates</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Category Filter */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Category
+            </label>
+            <select 
+              className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              disabled={loading || categories.length === 0}
+            >
+              <option value="">All Categories</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Search Box */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Search
+            </label>
+            <input 
+              type="text"
+              className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search templates..."
+              disabled={loading}
+            />
+          </div>
+        </div>
+        
+        {/* Filter Status */}
+        <div className="mt-4 flex justify-between items-center">
+          <p className="text-sm text-slate-500">
+            Showing {filteredTemplates.length} of {templates.length} templates
+          </p>
+          
+          {(selectedCategory || searchTerm) && (
+            <button 
+              className="text-sm text-blue-600 hover:text-blue-800"
+              onClick={handleClearFilters}
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+      </div>
+      
       {/* Templates List */}
       <TemplateList 
-        templates={templates}
+        templates={filteredTemplates}
         selectedConnectionId={selectedConnection}
         onApplyTemplate={handleApplyTemplate}
         isLoading={loading}

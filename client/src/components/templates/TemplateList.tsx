@@ -61,12 +61,15 @@ const TemplateList: FC<TemplateListProps> = ({
           <h2 className="text-xl font-medium text-slate-900 mb-4 capitalize">{category}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {groupedTemplates[category].map(template => (
+            ))}
+=======
               <TemplateCard 
                 key={template.id}
                 template={template}
                 connectionId={selectedConnectionId}
                 onApply={onApplyTemplate}
               />
+            ))}
 =======
             ))}
           </div>

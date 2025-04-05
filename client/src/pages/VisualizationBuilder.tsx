@@ -1,4 +1,5 @@
 import { FC, useState, useEffect } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import ChartTypeSelector from '../components/visualization/ChartTypeSelector';
 import FieldMapper from '../components/visualization/FieldMapper';
 import ChartRenderer from '../components/visualization/ChartRenderer';
@@ -13,16 +14,36 @@ type ChartType = 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter';
  * Allows users to create custom visualizations from database data
  */
 const VisualizationBuilder: FC = () => {
+  // Get location state for template data passed from template application
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  
+  // Get template-related parameters from the URL
+  const templateId = searchParams.get('template');
+  const connectionParam = searchParams.get('connection');
+  const tableParam = searchParams.get('table');
+  
+  // Get template result from location state if available
+  const templateResult = location.state?.templateResult;
+  const templateMappings = location.state?.mappings;
+  const templateSourceName = location.state?.sourceName;
+  
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [selectedConnection, setSelectedConnection] = useState<string | null>(null);
+  const [selectedConnection, setSelectedConnection] = useState<string | null>(connectionParam || null);
   const [tables, setTables] = useState<TableInfo[]>([]);
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [selectedTable, setSelectedTable] = useState<string | null>(tableParam || null);
   const [tableSchema, setTableSchema] = useState<TableSchema | null>(null);
-  const [chartType, setChartType] = useState<ChartType>('bar');
-  const [fieldMappings, setFieldMappings] = useState<FieldMapping>({});
-  const [chartData, setChartData] = useState<ChartData | null>(null);
+  const [chartType, setChartType] = useState<ChartType>(
+    templateResult?.type?.toLowerCase() as ChartType || 'bar'
+  );
+  const [fieldMappings, setFieldMappings] = useState<FieldMapping>(templateMappings || {});
+  const [chartData, setChartData] = useState<ChartData | null>(templateResult?.data || null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isFromTemplate, setIsFromTemplate] = useState<boolean>(!!templateResult);
+  const [visualizationName, setVisualizationName] = useState<string>(
+    templateSourceName ? `${templateSourceName} (from template)` : ''
+  );
   
   useEffect(() => {
     // Fetch connections from API
@@ -83,6 +104,11 @@ const VisualizationBuilder: FC = () => {
   }, [selectedConnection, selectedTable]);
   
   useEffect(() => {
+    // Skip this effect if we already have chart data from a template
+    if (isFromTemplate && chartData && Object.keys(fieldMappings).length > 0 && !selectedTable) {
+      return;
+    }
+
     // Generate chart data based on field mappings
     const generateChartData = async () => {
       if (
@@ -146,7 +172,7 @@ const VisualizationBuilder: FC = () => {
     };
     
     generateChartData();
-  }, [selectedConnection, selectedTable, chartType, fieldMappings, tableSchema]);
+  }, [selectedConnection, selectedTable, chartType, fieldMappings, tableSchema, isFromTemplate, chartData]);
   
   // Helper function to apply aggregations to data
   const applyAggregations = (
@@ -472,12 +498,20 @@ const VisualizationBuilder: FC = () => {
     setTableSchema(null);
     setFieldMappings({});
     setChartData(null);
+    setIsFromTemplate(false);
   };
   
   const handleTableChange = (tableName: string) => {
     setSelectedTable(tableName);
-    setFieldMappings({});
-    setChartData(null);
+    
+    // Only reset mappings if not from template
+    if (!isFromTemplate) {
+      setFieldMappings({});
+      setChartData(null);
+    } else {
+      // If from template but table changed, no longer consider it from template
+      setIsFromTemplate(tableName === tableParam);
+    }
   };
   
   const handleChartTypeChange = (type: ChartType) => {
@@ -485,15 +519,26 @@ const VisualizationBuilder: FC = () => {
     // Reset field mappings when changing chart type as they may be incompatible
     setFieldMappings({});
     setChartData(null);
+    setIsFromTemplate(false);
   };
   
   const handleFieldMappingChange = (mappings: FieldMapping) => {
     setFieldMappings(mappings);
+    // No longer consider from template if mappings changed
+    if (isFromTemplate && JSON.stringify(mappings) !== JSON.stringify(templateMappings)) {
+      setIsFromTemplate(false);
+    }
   };
   
   const handleSaveVisualization = async () => {
     if (!selectedConnection || !selectedTable || !chartData) {
       setError('Cannot save visualization: missing data');
+      return;
+    }
+    
+    // Use custom name or generate one if empty
+    if (!visualizationName.trim()) {
+      setError('Please provide a name for the visualization');
       return;
     }
     
@@ -514,42 +559,45 @@ const VisualizationBuilder: FC = () => {
         }
       });
       
-      // Create a human-readable name for the visualization
-      let vizName = `${selectedTable} ${chartType} chart`;
-      
-      // If using color field, add that to the name
-      if (fieldMappings.color) {
-        const colorField = typeof fieldMappings.color === 'string' && fieldMappings.color.includes('|') 
-          ? fieldMappings.color.split('|')[0] 
-          : fieldMappings.color;
-        vizName += ` by ${colorField}`;
-      }
-      
-      // If using aggregations, note that in the name
-      if (hasAdvancedSettings) {
-        vizName += " (with aggregations)";
-      }
-      
       // Create visualization data object with the structure expected by the API
       const visualizationData = {
-        name: vizName,
+        name: visualizationName,
         type: chartType,
         connectionId: parseInt(selectedConnection, 10),
         tableName: selectedTable,
         config: {
           mappings: fieldMappings,
           parsedMappings,
-          chartType
+          chartType,
+          isFromTemplate: isFromTemplate,
+          templateId: templateId || undefined
         }
       };
       
       // Save to API
-      await visualizationApi.create(visualizationData);
+      const savedViz = await visualizationApi.create(visualizationData);
       
       // Show success message
-      alert('Visualization saved successfully!');
-      
       setError(null);
+      
+      // Show success message with some styling
+      const successDiv = document.createElement('div');
+      successDiv.className = 'fixed top-4 right-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded shadow-md z-50';
+      successDiv.innerHTML = `
+        <div class="flex items-center">
+          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          <span>Visualization "${visualizationName}" saved successfully!</span>
+        </div>
+      `;
+      document.body.appendChild(successDiv);
+      
+      // Remove the success message after 3 seconds
+      setTimeout(() => {
+        document.body.removeChild(successDiv);
+      }, 3000);
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save visualization');
     } finally {
@@ -569,6 +617,19 @@ const VisualizationBuilder: FC = () => {
         </div>
       )}
       
+      {isFromTemplate && (
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-blue-700">
+              You're using the <strong>{templateSourceName}</strong> template. You can modify the settings below or save it as is.
+            </p>
+          </div>
+        </div>
+      )}
+      
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Configuration Panel */}
         <div className="lg:col-span-1 space-y-6">
@@ -584,7 +645,7 @@ const VisualizationBuilder: FC = () => {
                   className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
                   value={selectedConnection || ''}
                   onChange={(e) => handleConnectionChange(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || (isFromTemplate && !!templateResult)}
                 >
                   <option value="">Select a connection</option>
                   {connections.map((connection) => (
@@ -604,7 +665,7 @@ const VisualizationBuilder: FC = () => {
                     className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
                     value={selectedTable || ''}
                     onChange={(e) => handleTableChange(e.target.value)}
-                    disabled={loading || tables.length === 0}
+                    disabled={loading || tables.length === 0 || (isFromTemplate && !!templateResult)}
                   >
                     <option value="">Select a table</option>
                     {tables.map((table) => (
@@ -637,6 +698,12 @@ const VisualizationBuilder: FC = () => {
                 mappings={fieldMappings}
                 onChange={handleFieldMappingChange}
               />
+            ) : isFromTemplate && templateResult ? (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-green-700">
+                  Field mappings already configured from the template.
+                </p>
+              </div>
             ) : (
               <p className="text-slate-500">Select a table to map fields</p>
             )}
@@ -650,7 +717,7 @@ const VisualizationBuilder: FC = () => {
               <h2 className="text-xl font-medium text-slate-900">Chart Preview</h2>
               {chartData && (
                 <button
-                  className="px-4 py-2 bg-primary text-white rounded text-sm font-medium hover:bg-primary-dark transition-colors"
+                  className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors"
                   onClick={handleSaveVisualization}
                   disabled={loading}
                 >
@@ -658,17 +725,44 @@ const VisualizationBuilder: FC = () => {
                 </button>
               )}
             </div>
+
+            {/* Visualization Name Input */}
+            {chartData && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Visualization Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+                  value={visualizationName}
+                  onChange={(e) => setVisualizationName(e.target.value)}
+                  placeholder="Enter a name for this visualization"
+                />
+                {isFromTemplate && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    This visualization was created from the "{templateSourceName}" template
+                  </p>
+                )}
+              </div>
+            )}
             
             <div className="h-[500px] flex items-center justify-center">
               {loading ? (
-                <p className="text-slate-500">Loading chart data...</p>
+                <div className="flex flex-col items-center justify-center">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-slate-500 mt-4">Loading chart data...</p>
+                </div>
               ) : chartData ? (
                 <ChartRenderer 
                   type={chartType}
                   data={chartData}
                 />
               ) : (
-                <p className="text-slate-500">Select data source and map fields to generate a chart</p>
+                <div className="text-center p-4">
+                  <p className="text-slate-500 mb-2">Select data source and map fields to generate a chart</p>
+                  <p className="text-xs text-slate-400">Charts will update automatically as you configure them</p>
+                </div>
               )}
             </div>
           </div>

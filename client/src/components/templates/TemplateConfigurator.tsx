@@ -93,20 +93,81 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
     fetchData();
   }, [templateId, connectionId]);
   
+=======
   // When selected table changes, fetch table schema for column mapping
   useEffect(() => {
     const fetchTableSchema = async () => {
       if (!connectionId || !selectedTable) return;
       
       try {
+        setError(null);
+        
+        // Show a loading message while fetching schema
+        setColumns([]);
+        
         const schema = await tableApi.getSchema(connectionId, selectedTable);
-        setColumns(schema.columns.map(col => ({
+        if (!schema || !schema.columns || schema.columns.length === 0) {
+          setError(`No columns found in table "${selectedTable}"`);
+          return;
+        }
+        
+        // Process and categorize columns
+        const processedColumns = schema.columns.map(col => ({
           name: col.name,
           type: col.type,
           isNumeric: isNumericType(col.type),
           isText: isTextType(col.type),
           isDate: isDateType(col.type)
-        })));
+        }));
+        
+        setColumns(processedColumns);
+        
+        // Provide some automatic suggestions for mappings based on column types and template
+        if (template) {
+          const newMappings = { ...mappings };
+          
+          // For bar/line charts
+          if (template.type.toLowerCase() === 'bar' || template.type.toLowerCase() === 'line') {
+            // Find a text/date column for x-axis
+            if (!newMappings.x) {
+              const textColumn = processedColumns.find(col => col.isText || col.isDate);
+              if (textColumn) {
+                newMappings.x = textColumn.name;
+              }
+            }
+            
+            // Find a numeric column for y-axis
+            if (!newMappings.y) {
+              const numericColumn = processedColumns.find(col => col.isNumeric);
+              if (numericColumn) {
+                newMappings.y = numericColumn.name;
+              }
+            }
+          } 
+          // For pie/doughnut charts
+          else if (template.type.toLowerCase() === 'pie' || template.type.toLowerCase() === 'doughnut') {
+            // Find a text column for labels
+            if (!newMappings.labels) {
+              const textColumn = processedColumns.find(col => col.isText);
+              if (textColumn) {
+                newMappings.labels = textColumn.name;
+              }
+            }
+            
+            // Find a numeric column for values
+            if (!newMappings.values) {
+              const numericColumn = processedColumns.find(col => col.isNumeric);
+              if (numericColumn) {
+                newMappings.values = numericColumn.name;
+              }
+            }
+          }
+          
+          // Update mappings if we made any changes
+          if (JSON.stringify(newMappings) !== JSON.stringify(mappings)) {
+            setMappings(newMappings);
+          }
+        }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to load table schema';
         setError(errorMessage);
@@ -114,7 +175,7 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
     };
     
     fetchTableSchema();
-  }, [connectionId, selectedTable]);
+  }, [connectionId, selectedTable, template]);
   
   // Generate preview data when mappings or selected table changes
   useEffect(() => {
@@ -175,6 +236,7 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
     setMappings(resetMappings);
   };
   
+=======
   // Apply template and save visualization
   const handleApplyTemplate = async () => {
     if (!template || !connectionId || !selectedTable) {
@@ -189,6 +251,14 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
       return;
     }
     
+    // Show specific validation messages for each required field
+    for (const field of requiredFields) {
+      if (!mappings[field.name]) {
+        setError(`Please select a value for "${field.label}"`);
+        return;
+      }
+    }
+    
     try {
       setLoading(true);
       
@@ -198,6 +268,17 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
         tableNames: [selectedTable],
         mappings
       });
+      
+      // Check if the result has valid data
+      if (!result.data || 
+          !result.data.labels || 
+          !result.data.datasets || 
+          result.data.labels.length === 0 || 
+          result.data.datasets.length === 0) {
+        setError('The template did not generate any visualization data. Please try different field mappings or another table.');
+        setLoading(false);
+        return;
+      }
       
       // Redirect to visualization builder with the data
       navigate(`/visualize?template=${template.id}&connection=${connectionId}&table=${selectedTable}`, {
