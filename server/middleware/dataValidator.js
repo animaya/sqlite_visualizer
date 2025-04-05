@@ -230,6 +230,16 @@ const schemas = {
   export: {
     csv: Joi.object({
       format: Joi.string().valid('csv').default('csv')
+    }),
+    json: Joi.object({
+      includeSchema: Joi.boolean().default(true),
+      format: Joi.string().valid('json').default('json')
+    }),
+    query: Joi.object({
+      limit: Joi.number().integer().min(1).max(100000).default(1000),
+      filter: Joi.string().optional(),
+      sort: Joi.string().optional(),
+      includeSchema: Joi.boolean().default(true)
     })
   }
 };
