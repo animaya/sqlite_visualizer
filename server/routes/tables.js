@@ -303,7 +303,7 @@ router.get('/:table/schema',
       });
     } catch (error) {
       console.error(`Error in GET /tables/${table}/schema for connection ${id}:`, error);
-      
+
       if (!res.headersSent) {
         res.status(500).json({
           success: false,
@@ -549,7 +549,7 @@ router.get('/:table/data',
     } catch (error) {
       clearTimeout(timeoutId);
       console.error(`Error in GET /tables/${table}/data for connection ${id}:`, error);
-      
+
       if (!res.headersSent) {
         res.status(500).json({
           success: false,
@@ -617,7 +617,7 @@ router.get('/:table/data/sample',
       });
     } catch (error) {
       console.error(`Error in GET /tables/${table}/data/sample for connection ${id}:`, error);
-      
+
       if (!res.headersSent) {
         res.status(500).json({
           success: false,
