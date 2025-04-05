@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Connection } from '../../types';
 
 interface ConnectionListProps {
-  connections: Connection[];
+  connections: Connection[] | null;
   loading?: boolean;
   error?: string | null;
   onDeleteConnection: (id: string | number) => void;
