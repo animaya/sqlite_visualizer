@@ -8,6 +8,8 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const connectionService = require('../services/connectionService');
 const databaseService = require('../services/databaseService');
+const queryBuilder = require('../utils/queryBuilder');
+const dbUtils = require('../utils/dbUtils');
 const { validateParams, validateQuery, schemas } = require('../middleware/dataValidator');
 const Joi = require('joi');
 
@@ -36,7 +38,7 @@ const sampleQuerySchema = Joi.object({
     })
 });
 
-// Table data query schema (extends the common table query schema)
+// Enhanced table data query schema with advanced filtering
 const tableDataQuerySchema = schemas.table.query.keys({
   filter: Joi.string().optional()
     .messages({
@@ -45,6 +47,22 @@ const tableDataQuerySchema = schemas.table.query.keys({
   sort: Joi.string().optional()
     .messages({
       'string.base': 'Sort must be a valid JSON string'
+    }),
+  search: Joi.string().optional()
+    .messages({
+      'string.base': 'Search must be a text string'
+    }),
+  searchColumns: Joi.string().optional()
+    .messages({
+      'string.base': 'Search columns must be a comma-separated list or JSON array'
+    }),
+  dateRange: Joi.string().optional()
+    .messages({
+      'string.base': 'Date range must be a valid JSON object with start and end properties'
+    }),
+  dateColumn: Joi.string().optional()
+    .messages({
+      'string.base': 'Date column must be a valid column name'
     })
 });
 
@@ -123,11 +141,14 @@ router.get('/',
         
         let rowCount = 0;
         try {
-          // Get approximate row count (faster than COUNT(*) for large tables)
+          // Use QueryBuilder for a clean count query
+          const countQuery = queryBuilder.buildCountQuery(table.name);
+          
+          // Get approximate row count
           const countResult = await new Promise((resolve, reject) => {
             db.get(
-              `SELECT COUNT(*) as count FROM "${table.name}" LIMIT 1000`,
-              [],
+              countQuery.sql,
+              countQuery.params,
               (err, result) => {
                 if (err) {
                   console.warn(`Error counting rows for ${table.name}: ${err.message}`);
@@ -267,6 +288,28 @@ router.get('/:table/schema',
         );
       });
       
+      // Process index details
+      const indexDetails = await Promise.all(indices.map(async (index) => {
+        const columns = await new Promise((resolve, reject) => {
+          db.all(`PRAGMA index_info("${index.name}")`, [], (err, results) => {
+            if (err) {
+              console.warn(`Error getting index details for ${index.name}: ${err.message}`);
+              resolve([]);
+            } else {
+              resolve(results || []);
+            }
+          });
+        });
+        
+        return {
+          ...index,
+          columns: columns.map(col => ({
+            name: col.name,
+            position: col.seqno
+          }))
+        };
+      }));
+      
       // Format the columns with additional info
       const formattedColumns = columns.map(column => {
         // Check if column is part of a primary key
@@ -276,7 +319,7 @@ router.get('/:table/schema',
         const foreignKey = foreignKeys.find(fk => fk.from === column.name);
         
         // Parse the column type
-        const typeInfo = parseColumnType(column.type);
+        const typeInfo = dbUtils.parseColumnType(column.type);
         
         return {
           name: column.name,
@@ -307,10 +350,7 @@ router.get('/:table/schema',
             onUpdate: fk.on_update,
             onDelete: fk.on_delete
           })),
-          indices: indices.map(index => ({
-            name: index.name,
-            unique: index.unique === 1
-          }))
+          indices: indexDetails
         }
       });
     } catch (error) {
@@ -329,7 +369,7 @@ router.get('/:table/schema',
 
 /**
  * GET /api/connections/:id/tables/:table/data
- * Get table data (with pagination)
+ * Get table data (with pagination, filtering, sorting, and searching)
  */
 router.get('/:table/data', 
   validateParams(tableNameSchema),
@@ -340,7 +380,11 @@ router.get('/:table/data',
       page = 1, 
       limit = 100, 
       sort: sortParam, 
-      filter: filterParam 
+      filter: filterParam,
+      search,
+      searchColumns,
+      dateRange,
+      dateColumn
     } = req.query;
     
     // Set a timeout for this operation
@@ -368,67 +412,174 @@ router.get('/:table/data',
         });
       }
       
-      // Parse pagination parameters
-      const pageNum = parseInt(page) || 1;
-      const pageSize = Math.min(parseInt(limit) || 100, 1000); // Limit to max 1000 rows
-      const offset = (pageNum - 1) * pageSize;
+      // Parse filter, sort, and other parameters
+      const sort = queryBuilder.parseRawSort(sortParam);
+      const filter = queryBuilder.parseRawFilter(filterParam);
       
-      // Parse sort parameter
-      let sortClause = '';
-      if (sortParam) {
-        try {
-          const sort = typeof sortParam === 'string' ? JSON.parse(sortParam) : sortParam;
-          if (sort) {
-            const column = sort.column || sort.field;
-            const direction = (sort.direction || 'asc').toUpperCase();
-            
-            if (column && /^[a-zA-Z0-9_]+$/.test(column)) {
-              sortClause = ` ORDER BY "${column}" ${direction === 'DESC' ? 'DESC' : 'ASC'}`;
+      // Get table schema to determine date fields and searchable columns
+      const columns = await new Promise((resolve, reject) => {
+        db.all(
+          `PRAGMA table_info("${table}")`,
+          [],
+          (err, results) => {
+            if (err) {
+              console.error(`Error getting column info: ${err.message}`);
+              reject(err);
+            } else {
+              resolve(results || []);
             }
           }
-        } catch (e) {
-          console.warn(`Invalid sort parameter: ${sortParam}`);
-        }
-      }
+        );
+      });
       
-      // Parse filter parameter
-      let whereClause = '';
-      let whereParams = [];
-      if (filterParam) {
-        try {
-          const filter = typeof filterParam === 'string' ? JSON.parse(filterParam) : filterParam;
+      // Extract column names for search if needed
+      const columnNames = columns.map(col => col.name);
+      
+      // Build the appropriate query based on parameters
+      let query;
+      let countQuery;
+      
+      // Handle text search if requested
+      if (search && search.trim()) {
+        // Parse searchColumns parameter
+        let searchableColumns = [];
+        if (searchColumns) {
+          try {
+            // Try parsing as JSON array
+            searchableColumns = JSON.parse(searchColumns);
+          } catch (e) {
+            // Fall back to comma-separated list
+            searchableColumns = searchColumns.split(',').map(col => col.trim());
+          }
+          
+          // Validate that all columns exist in the table
+          searchableColumns = searchableColumns.filter(col => columnNames.includes(col));
+        }
+        
+        // If no valid search columns specified, use all text-like columns
+        if (searchableColumns.length === 0) {
+          searchableColumns = columns
+            .filter(col => {
+              const type = col.type.toUpperCase();
+              return type.includes('TEXT') || type.includes('CHAR') || type.includes('VARCHAR');
+            })
+            .map(col => col.name);
+        }
+        
+        // If we have columns to search in, use text search query
+        if (searchableColumns.length > 0) {
+          query = queryBuilder.buildTextSearchQuery(table, searchableColumns, search, {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            sort,
+            filter
+          });
+          
+          // Build count query with the same WHERE clause but without pagination
+          const whereConditions = searchableColumns.map(() => '?');
+          const whereParams = Array(searchableColumns.length).fill(`%${search}%`);
+          
+          countQuery = {
+            sql: `SELECT COUNT(*) as count FROM "${table}" WHERE (${searchableColumns.map(col => `"${col}" LIKE ?`).join(' OR ')})`,
+            params: whereParams
+          };
+          
+          // Add filter conditions to count query if needed
           if (filter && Object.keys(filter).length > 0) {
-            const conditions = [];
-            
-            for (const [key, value] of Object.entries(filter)) {
-              // Skip invalid column names
-              if (!/^[a-zA-Z0-9_]+$/.test(key)) continue;
-              
-              if (value === null) {
-                conditions.push(`"${key}" IS NULL`);
-              } else if (typeof value === 'string' && value.includes('%')) {
-                conditions.push(`"${key}" LIKE ?`);
-                whereParams.push(value);
-              } else {
-                conditions.push(`"${key}" = ?`);
-                whereParams.push(value);
-              }
-            }
-            
-            if (conditions.length > 0) {
-              whereClause = ` WHERE ${conditions.join(' AND ')}`;
+            const filterClause = queryBuilder.parseFilters(filter);
+            if (filterClause.where !== '1=1') {
+              countQuery.sql += ` AND (${filterClause.where})`;
+              countQuery.params.push(...filterClause.params);
             }
           }
-        } catch (e) {
-          console.warn(`Invalid filter parameter: ${filterParam}`);
+        } else {
+          // Fall back to regular query if no text columns found
+          query = queryBuilder.buildPaginatedSelectQuery(table, ['*'], {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            sort,
+            filter
+          });
+          
+          countQuery = queryBuilder.buildCountQuery(table, filter);
         }
       }
+      // Handle date range filtering if requested
+      else if (dateRange && dateColumn && columnNames.includes(dateColumn)) {
+        let dateRangeObj;
+        try {
+          dateRangeObj = JSON.parse(dateRange);
+        } catch (e) {
+          console.warn(`Invalid date range: ${dateRange}`);
+          dateRangeObj = {};
+        }
+        
+        const { start, end } = dateRangeObj;
+        
+        if (start || end) {
+          query = queryBuilder.buildDateRangeQuery(table, dateColumn, start, end, {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            sort,
+            filter
+          });
+          
+          // Build a count query with the same WHERE clause
+          countQuery = {
+            sql: `SELECT COUNT(*) as count FROM "${table}" WHERE `,
+            params: []
+          };
+          
+          if (start && end) {
+            countQuery.sql += `"${dateColumn}" BETWEEN ? AND ?`;
+            countQuery.params.push(start, end);
+          } else if (start) {
+            countQuery.sql += `"${dateColumn}" >= ?`;
+            countQuery.params.push(start);
+          } else if (end) {
+            countQuery.sql += `"${dateColumn}" <= ?`;
+            countQuery.params.push(end);
+          } else {
+            countQuery.sql += '1=1';
+          }
+          
+          // Add filter conditions if needed
+          if (filter && Object.keys(filter).length > 0) {
+            const filterClause = queryBuilder.parseFilters(filter);
+            if (filterClause.where !== '1=1') {
+              countQuery.sql += ` AND (${filterClause.where})`;
+              countQuery.params.push(...filterClause.params);
+            }
+          }
+        } else {
+          // Fall back to regular query if no valid date range
+          query = queryBuilder.buildPaginatedSelectQuery(table, ['*'], {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            sort,
+            filter
+          });
+          
+          countQuery = queryBuilder.buildCountQuery(table, filter);
+        }
+      }
+      // Regular query with standard filtering and pagination
+      else {
+        query = queryBuilder.buildPaginatedSelectQuery(table, ['*'], {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          sort,
+          filter
+        });
+        
+        countQuery = queryBuilder.buildCountQuery(table, filter);
+      }
       
-      // Get total count
+      // Execute count query first to get total
       const countResult = await new Promise((resolve, reject) => {
         db.get(
-          `SELECT COUNT(*) as count FROM "${table}"${whereClause}`,
-          whereParams,
+          countQuery.sql,
+          countQuery.params,
           (err, result) => {
             if (err) {
               reject(err);
@@ -439,11 +590,11 @@ router.get('/:table/data',
         );
       });
       
-      // Get page of data
+      // Now execute the main data query
       const data = await new Promise((resolve, reject) => {
         db.all(
-          `SELECT * FROM "${table}"${whereClause}${sortClause} LIMIT ? OFFSET ?`,
-          [...whereParams, pageSize, offset],
+          query.sql,
+          query.params,
           (err, results) => {
             if (err) {
               reject(err);
@@ -463,9 +614,9 @@ router.get('/:table/data',
         data: data,
         meta: {
           total: countResult.count,
-          page: pageNum,
-          limit: pageSize,
-          totalPages: Math.ceil(countResult.count / pageSize)
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(countResult.count / parseInt(limit))
         }
       });
     } catch (error) {
@@ -506,13 +657,14 @@ router.get('/:table/data/sample',
         });
       }
       
-      // Get sample data (limit to reasonable size)
-      const sampleSize = Math.min(parseInt(limit) || 10, 100);
+      // Use the sample query builder from the enhanced query builder
+      const sampleQuery = queryBuilder.buildSampleQuery(table, parseInt(limit));
       
+      // Execute the sample query
       const data = await new Promise((resolve, reject) => {
         db.all(
-          `SELECT * FROM "${table}" LIMIT ?`,
-          [sampleSize],
+          sampleQuery.sql,
+          sampleQuery.params,
           (err, results) => {
             if (err) {
               reject(err);
@@ -523,11 +675,12 @@ router.get('/:table/data/sample',
         );
       });
       
-      // Get total count
+      // Get total count using query builder
+      const countQuery = queryBuilder.buildCountQuery(table);
       const countResult = await new Promise((resolve, reject) => {
         db.get(
-          `SELECT COUNT(*) as count FROM "${table}"`,
-          [],
+          countQuery.sql,
+          countQuery.params,
           (err, result) => {
             if (err) {
               console.warn(`Error counting rows for ${table}: ${err.message}`);
@@ -564,74 +717,180 @@ router.get('/:table/data/sample',
 );
 
 /**
- * Utility function to parse SQLite column types
+ * GET /api/connections/:id/tables/:table/search
+ * Search for text across multiple columns
  */
-function parseColumnType(typeName) {
-  if (!typeName) {
-    return {
-      type: 'unknown',
-      jsType: 'string',
-      isNumeric: false,
-      isDate: false,
-      isText: true
-    };
+router.get('/:table/search', 
+  validateParams(tableNameSchema),
+  async (req, res, next) => {
+    const { id, table } = req.params;
+    const { query, columns, page = 1, limit = 100 } = req.query;
+    
+    try {
+      // Get database connection directly
+      const db = await connectionService.getConnection(id);
+      
+      if (!db) {
+        return res.status(404).json({ 
+          success: false,
+          error: 'Connection not found',
+          message: `No valid connection found with ID: ${id}`
+        });
+      }
+      
+      // Validate search query
+      if (!query || query.trim() === '') {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid search query',
+          message: 'Search query is required'
+        });
+      }
+      
+      // Get table columns to determine which ones to search
+      const tableColumns = await new Promise((resolve, reject) => {
+        db.all(
+          `PRAGMA table_info("${table}")`,
+          [],
+          (err, results) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(results || []);
+            }
+          }
+        );
+      });
+      
+      // Parse columns parameter
+      let searchColumns = [];
+      if (columns) {
+        try {
+          // Try parsing as JSON array
+          searchColumns = JSON.parse(columns);
+        } catch (e) {
+          // Fall back to comma-separated list
+          searchColumns = columns.split(',').map(col => col.trim());
+        }
+        
+        // Validate that all columns exist in the table
+        const columnNames = tableColumns.map(col => col.name);
+        searchColumns = searchColumns.filter(col => columnNames.includes(col));
+      }
+      
+      // If no valid search columns specified, use all text-like columns
+      if (searchColumns.length === 0) {
+        searchColumns = tableColumns
+          .filter(col => {
+            const type = col.type.toUpperCase();
+            return type.includes('TEXT') || type.includes('CHAR') || type.includes('VARCHAR');
+          })
+          .map(col => col.name);
+      }
+      
+      // Build search query if we have columns to search in
+      if (searchColumns.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No searchable columns',
+          message: 'This table has no text columns that can be searched'
+        });
+      }
+      
+      // Build and execute search query
+      const searchQuery = queryBuilder.buildTextSearchQuery(
+        table, 
+        searchColumns, 
+        query, 
+        {
+          page: parseInt(page),
+          limit: parseInt(limit)
+        }
+      );
+      
+      // Execute search query
+      const data = await new Promise((resolve, reject) => {
+        db.all(
+          searchQuery.sql,
+          searchQuery.params,
+          (err, results) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(results || []);
+            }
+          }
+        );
+      });
+      
+      // Build and execute count query
+      const countQuery = {
+        sql: `SELECT COUNT(*) as count FROM "${table}" WHERE (${searchColumns.map(col => `"${col}" LIKE ?`).join(' OR ')})`,
+        params: Array(searchColumns.length).fill(`%${query}%`)
+      };
+      
+      const countResult = await new Promise((resolve, reject) => {
+        db.get(
+          countQuery.sql,
+          countQuery.params,
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result || { count: 0 });
+            }
+          }
+        );
+      });
+      
+      // Return the search results
+      res.json({
+        success: true,
+        data: data,
+        meta: {
+          query: query,
+          searchedColumns: searchColumns,
+          total: countResult.count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(countResult.count / parseInt(limit))
+        }
+      });
+    } catch (error) {
+      console.error(`Error searching table ${table}:`, error);
+      
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          error: 'Failed to search table',
+          message: error.message
+        });
+      }
+    }
   }
-  
-  // Normalize type name
-  const type = typeName.toUpperCase();
-  
-  // Check for numeric types
-  if (
-    type.includes('INT') || 
-    type.includes('REAL') || 
-    type.includes('FLOA') || 
-    type.includes('DOUB') || 
-    type.includes('NUM') ||
-    type.includes('DECI')
-  ) {
-    return {
-      type: typeName,
-      jsType: 'number',
-      isNumeric: true,
-      isDate: false,
-      isText: false
-    };
+);
+
+/**
+ * GET /api/connections/:id/tables/:table/operators
+ * Get the list of supported query operators
+ */
+router.get('/:table/operators', (req, res) => {
+  try {
+    const operators = queryBuilder.getSupportedOperators();
+    
+    res.json({
+      success: true,
+      data: operators
+    });
+  } catch (error) {
+    console.error('Error getting operators:', error);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get operators',
+      message: error.message
+    });
   }
-  
-  // Check for date/time types
-  if (
-    type.includes('DATE') || 
-    type.includes('TIME') || 
-    type.includes('TIMESTAMP')
-  ) {
-    return {
-      type: typeName,
-      jsType: 'date',
-      isNumeric: false,
-      isDate: true,
-      isText: false
-    };
-  }
-  
-  // Check for boolean types
-  if (type.includes('BOOL')) {
-    return {
-      type: typeName,
-      jsType: 'boolean',
-      isNumeric: false,
-      isDate: false,
-      isText: false
-    };
-  }
-  
-  // Default to text type
-  return {
-    type: typeName,
-    jsType: 'string',
-    isNumeric: false,
-    isDate: false,
-    isText: true
-  };
-}
+});
 
 module.exports = router;
