@@ -21,13 +21,6 @@ const visualizationsRoutes = require('./routes/visualizations');
 const templatesRoutes = require('./routes/templates');
 const exportRoutes = require('./routes/export');
 
-// Import routes
-const connectionsRoutes = require('./routes/connections');
-const tablesRoutes = require('./routes/tables');
-const visualizationsRoutes = require('./routes/visualizations');
-const templatesRoutes = require('./routes/templates');
-const exportRoutes = require('./routes/export');
-
 // Import services needed for initialization
 const appDbService = require('./services/appDbService');
 
