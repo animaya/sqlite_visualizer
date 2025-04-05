@@ -299,6 +299,7 @@ function all(sql, params = []) {
 
 module.exports = {
   initializeDatabase, // Export for explicit initialization
+  initializeDatabase, // Export for explicit initialization
   getDb,
   closeDatabase,
   run,

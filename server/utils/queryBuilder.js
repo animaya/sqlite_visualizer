@@ -459,7 +459,7 @@ function isValidIdentifier(identifier) {
   // or using a dedicated SQL identifier validation library if available.
   // Thorough testing of filter/sort inputs is crucial.
   if (typeof identifier !== 'string') return false;
-  
+
   // Allowed characters: letters, numbers, underscore
   // Must start with letter or underscore
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(identifier);

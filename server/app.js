@@ -24,6 +24,9 @@ const exportRoutes = require('./routes/export');
 // Import services needed for initialization
 const appDbService = require('./services/appDbService');
 
+// Import services needed for initialization
+const appDbService = require('./services/appDbService');
+
 // Import error handling middleware
 const errorHandler = require('./middleware/errorHandler');
 
@@ -141,9 +144,9 @@ const startServer = async () => {
     console.log('Initializing application database...');
     appDbService.initializeDatabase();
     console.log('Application database initialized.');
-    
+
     const availablePort = await findAvailablePort(DEFAULT_PORT);
-    
+
     server = app.listen(availablePort, () => {
       console.log(`Server running on port ${availablePort}`);
       
@@ -178,7 +181,7 @@ const startServer = async () => {
         console.log('Application database connection closed.');
         process.exit(0);
       });
-      
+
       // Force close after 10s if graceful shutdown fails
       setTimeout(() => {
         console.error('Could not close connections in time, forcefully shutting down');

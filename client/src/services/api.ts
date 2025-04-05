@@ -286,7 +286,7 @@ export const visualizationApi = {
     // Note: This currently fetches all columns in the sample, not just mapped ones.
     // If specific field selection is needed for performance, tableApi.getSample would need enhancement.
     return tableApi.getSample<T>(connectionId, tableName, limit)
-      .then(response => response.data)
+      .then(response => response.data) // Access the nested 'data' property from the sample response
       .catch(error => {
         console.error(`Error fetching sample data for visualization (table: ${tableName}):`, error);
         // Return empty array on error to allow UI to handle gracefully
@@ -318,8 +318,8 @@ export const visualizationApi = {
 
     return tableApi.getData<T>(connectionId, tableName, params)
       .then(response => ({
-        data: response.data,
-        total: response.total
+        data: response.data, // Access the nested 'data' property
+        total: response.total // Access the nested 'total' property
       }))
       .catch(error => {
         console.error(`Error fetching full data for visualization (table: ${tableName}):`, error);
