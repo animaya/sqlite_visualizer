@@ -15,7 +15,7 @@ interface ConnectionListProps {
  * Displays a list of database connections
  */
 const ConnectionList: FC<ConnectionListProps> = ({ 
-  connections = [], 
+  connections = null, 
   loading = false, 
   error = null, 
   onDeleteConnection 
@@ -36,7 +36,7 @@ const ConnectionList: FC<ConnectionListProps> = ({
     );
   }
   
-  if (!loading && connections.length === 0) {
+  if (!loading && (!connections || connections.length === 0)) {
     return (
       <div className="bg-white p-6 rounded-md border border-slate-200 text-center">
         <p className="text-slate-500">No connections yet. Add your first database connection.</p>
@@ -52,7 +52,7 @@ const ConnectionList: FC<ConnectionListProps> = ({
       
       <ul className="divide-y divide-slate-200">
         {
-          connections.map((connection) => (
+          Array.isArray(connections) && connections.map((connection) => (
             <li key={connection.id} className="p-4">
               <div className="flex justify-between items-center">
                 <div>

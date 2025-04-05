@@ -144,16 +144,18 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
 // Connection endpoints
 export const connectionApi = {
   getAll: (): Promise<Connection[]> => 
-    apiRequest<Connection[]>('/connections'),
+    apiRequest<{data: Connection[]}>('/connections')
+      .then(response => response.data),
   
   getById: (id: string | number): Promise<Connection> => 
-    apiRequest<Connection>(`/connections/${id}`),
+    apiRequest<{data: Connection}>(`/connections/${id}`)
+      .then(response => response.data),
   
   create: (connectionData: { name: string; path: string }): Promise<Connection> => 
-    apiRequest<Connection>('/connections', {
+    apiRequest<{data: Connection}>('/connections', {
       method: 'POST',
       body: JSON.stringify(connectionData),
-    }),
+    }).then(response => response.data),
   
   delete: (id: string | number): Promise<void> => 
     apiRequest<void>(`/connections/${id}`, {
@@ -167,11 +169,14 @@ export const connectionApi = {
     last_checked: string;
   }> => 
     apiRequest<{
-      size_bytes: number;
-      table_count: number;
-      is_valid: boolean;
-      last_checked: string;
-    }>(`/connections/${id}/health`),
+      data: {
+        size_bytes: number;
+        table_count: number;
+        is_valid: boolean;
+        last_checked: string;
+      }
+    }>(`/connections/${id}/health`)
+      .then(response => response.data),
 };
 
 // Table endpoints
@@ -181,9 +186,12 @@ export const tableApi = {
     type: string;
   }[]> => 
     apiRequest<{
-      name: string;
-      type: string;
-    }[]>(`/connections/${connectionId}/tables`),
+      data: {
+        name: string;
+        type: string;
+      }[]
+    }>(`/connections/${connectionId}/tables`)
+      .then(response => response.data),
   
   getSchema: (connectionId: string | number, tableName: string): Promise<{
     columns: {
@@ -193,12 +201,15 @@ export const tableApi = {
     }[];
   }> => 
     apiRequest<{
-      columns: {
-        name: string;
-        type: string;
-        nullable: boolean;
-      }[];
-    }>(`/connections/${connectionId}/tables/${tableName}/schema`),
+      data: {
+        columns: {
+          name: string;
+          type: string;
+          nullable: boolean;
+        }[];
+      }
+    }>(`/connections/${connectionId}/tables/${tableName}/schema`)
+      .then(response => response.data),
   
   getData: <T>(connectionId: string | number, tableName: string, params: Record<string, any> = {}): Promise<{
     data: T[];
@@ -228,30 +239,35 @@ export const tableApi = {
     count: number;
   }> => 
     apiRequest<{
-      data: T[];
-      count: number;
-    }>(`/connections/${connectionId}/tables/${tableName}/data/sample?limit=${limit}`),
+      data: {
+        data: T[];
+        count: number;
+      }
+    }>(`/connections/${connectionId}/tables/${tableName}/data/sample?limit=${limit}`)
+      .then(response => response.data),
 };
 
 // Visualization endpoints
 export const visualizationApi = {
   getAll: (): Promise<Visualization[]> => 
-    apiRequest<Visualization[]>('/visualizations'),
+    apiRequest<{data: Visualization[]}>('/visualizations')
+      .then(response => response.data),
   
   getById: (id: string | number): Promise<Visualization> => 
-    apiRequest<Visualization>(`/visualizations/${id}`),
+    apiRequest<{data: Visualization}>(`/visualizations/${id}`)
+      .then(response => response.data),
   
   create: (visualizationData: Omit<Visualization, 'id' | 'createdAt' | 'updatedAt'>): Promise<Visualization> => 
-    apiRequest<Visualization>('/visualizations', {
+    apiRequest<{data: Visualization}>('/visualizations', {
       method: 'POST',
       body: JSON.stringify(visualizationData),
-    }),
+    }).then(response => response.data),
   
   update: (id: string | number, visualizationData: Partial<Omit<Visualization, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Visualization> => 
-    apiRequest<Visualization>(`/visualizations/${id}`, {
+    apiRequest<{data: Visualization}>(`/visualizations/${id}`, {
       method: 'PUT',
       body: JSON.stringify(visualizationData),
-    }),
+    }).then(response => response.data),
   
   delete: (id: string | number): Promise<void> => 
     apiRequest<void>(`/visualizations/${id}`, {
@@ -345,11 +361,13 @@ export const templateApi = {
     }
     
     const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    return apiRequest<Template[]>(`/templates${queryString}`);
+    return apiRequest<{data: Template[]}>(`/templates${queryString}`)
+      .then(response => response.data);
   },
   
   getById: (id: string | number): Promise<Template> => 
-    apiRequest<Template>(`/templates/${id}`),
+    apiRequest<{data: Template}>(`/templates/${id}`)
+      .then(response => response.data),
   
   getRequirements: (id: string | number): Promise<{
     requiredFields: {name: string, label: string}[];
@@ -362,30 +380,34 @@ export const templateApi = {
     };
   }> => 
     apiRequest<{
-      requiredFields: {name: string, label: string}[];
-      optionalFields: {name: string, label: string}[];
-      templateInfo: {
-        name: string;
-        description?: string;
-        type: string;
-        category?: string;
-      };
-    }>(`/templates/${id}/requirements`),
+      data: {
+        requiredFields: {name: string, label: string}[];
+        optionalFields: {name: string, label: string}[];
+        templateInfo: {
+          name: string;
+          description?: string;
+          type: string;
+          category?: string;
+        };
+      }
+    }>(`/templates/${id}/requirements`)
+      .then(response => response.data),
   
   getCategories: (): Promise<string[]> => 
-    apiRequest<string[]>('/templates/categories'),
+    apiRequest<{data: string[]}>('/templates/categories')
+      .then(response => response.data),
   
   create: (templateData: Omit<Template, 'id'>): Promise<Template> => 
-    apiRequest<Template>('/templates', {
+    apiRequest<{data: Template}>('/templates', {
       method: 'POST',
       body: JSON.stringify(templateData),
-    }),
+    }).then(response => response.data),
   
   update: (id: string | number, templateData: Partial<Omit<Template, 'id'>>): Promise<Template> => 
-    apiRequest<Template>(`/templates/${id}`, {
+    apiRequest<{data: Template}>(`/templates/${id}`, {
       method: 'PUT',
       body: JSON.stringify(templateData),
-    }),
+    }).then(response => response.data),
   
   delete: (id: string | number): Promise<void> => 
     apiRequest<void>(`/templates/${id}`, {
@@ -402,13 +424,15 @@ export const templateApi = {
     type: string;
   }> => 
     apiRequest<{
-      data: any;
-      config: Record<string, any>;
-      type: string;
+      data: {
+        data: any;
+        config: Record<string, any>;
+        type: string;
+      }
     }>(`/templates/${templateId}/apply`, {
       method: 'POST',
       body: JSON.stringify(applicationData),
-    }),
+    }).then(response => response.data),
 };
 
 // Export endpoints
@@ -420,11 +444,14 @@ export const exportApi = {
     mimeType: string;
   }[]> => 
     apiRequest<{
-      id: string;
-      name: string;
-      extension: string;
-      mimeType: string;
-    }[]>('/export/formats'),
+      data: {
+        id: string;
+        name: string;
+        extension: string;
+        mimeType: string;
+      }[]
+    }>('/export/formats')
+      .then(response => response.data),
   
   exportVisualization: (visualizationId: string | number, format: string = 'csv'): string => 
     `${API_URL}/api/export/${format}/${visualizationId}`,

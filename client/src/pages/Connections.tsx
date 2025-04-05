@@ -10,7 +10,7 @@ import { connectionApi } from '../services/api';
  * Manages database connections and displays connection history
  */
 const Connections: FC = () => {
-  const [connections, setConnections] = useState<Connection[]>([]);
+  const [connections, setConnections] = useState<Connection[] | null>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -20,10 +20,23 @@ const Connections: FC = () => {
       try {
         setLoading(true);
         const data = await connectionApi.getAll();
-        setConnections(data);
-        setError(null);
+        console.log('Connections data received:', data);
+        console.log('Type of data:', typeof data);
+        console.log('Is Array?', Array.isArray(data));
+        
+        // Make sure we're setting an array
+        if (Array.isArray(data)) {
+          setConnections(data);
+        } else {
+          console.error('Expected array but got:', data);
+          setConnections([]);
+          setError('Data format error: Expected array of connections');
+        }
+        
       } catch (err) {
+        console.error('Error fetching connections:', err);
         setError(err instanceof Error ? err.message : 'Failed to load connections');
+        setConnections([]);
       } finally {
         setLoading(false);
       }
