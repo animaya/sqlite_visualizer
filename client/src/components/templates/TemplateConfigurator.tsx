@@ -93,7 +93,6 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
     fetchData();
   }, [templateId, connectionId]);
   
-=======
   // When selected table changes, fetch table schema for column mapping
   useEffect(() => {
     const fetchTableSchema = async () => {
@@ -175,7 +174,7 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
     };
     
     fetchTableSchema();
-  }, [connectionId, selectedTable, template]);
+  }, [connectionId, selectedTable, template, mappings]);
   
   // Generate preview data when mappings or selected table changes
   useEffect(() => {
@@ -236,7 +235,6 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
     setMappings(resetMappings);
   };
   
-=======
   // Apply template and save visualization
   const handleApplyTemplate = async () => {
     if (!template || !connectionId || !selectedTable) {
@@ -315,7 +313,8 @@ const TemplateConfigurator: FC<TemplateConfiguratorProps> = ({ onBack }) => {
     required: {name: string, label: string}[], 
     optional: {name: string, label: string}[] 
   } => {
-    switch (chartType) {
+    const type = chartType.toLowerCase();
+    switch (type) {
       case 'bar':
       case 'line':
         return {
