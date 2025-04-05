@@ -101,24 +101,13 @@ router.get('/',
         });
       }
       
-      // Use a direct query instead of service method
-      const tables = await new Promise((resolve, reject) => {
-        db.all(
-          `SELECT name, type, sql as creation_sql
-           FROM sqlite_master 
-           WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-           ORDER BY name`,
-          [],
-          (err, results) => {
-            if (err) {
-              console.error(`Error querying tables: ${err.message}`);
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      // Use synchronous API for better-sqlite3
+      const tables = db.prepare(
+        `SELECT name, type, sql as creation_sql
+         FROM sqlite_master 
+         WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+         ORDER BY name`
+      ).all();
       
       // Process each table to get row counts
       const tablesWithDetails = [];
@@ -144,21 +133,14 @@ router.get('/',
           // Use QueryBuilder for a clean count query
           const countQuery = queryBuilder.buildCountQuery(table.name);
           
-          // Get approximate row count
-          const countResult = await new Promise((resolve, reject) => {
-            db.get(
-              countQuery.sql,
-              countQuery.params,
-              (err, result) => {
-                if (err) {
-                  console.warn(`Error counting rows for ${table.name}: ${err.message}`);
-                  resolve({ count: 0 });
-                } else {
-                  resolve(result || { count: 0 });
-                }
-              }
-            );
-          });
+          // Get approximate row count using synchronous API
+          let countResult;
+          try {
+            countResult = db.prepare(countQuery.sql).get(...countQuery.params) || { count: 0 };
+          } catch (err) {
+            console.warn(`Error counting rows for ${table.name}: ${err.message}`);
+            countResult = { count: 0 };
+          }
           
           rowCount = countResult.count;
         } catch (error) {
@@ -218,20 +200,10 @@ router.get('/:table/schema',
         });
       }
       
-      // Check if table exists
-      const tableExists = await new Promise((resolve) => {
-        db.get(
-          `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
-          [table],
-          (err, result) => {
-            if (err || !result) {
-              resolve(false);
-            } else {
-              resolve(true);
-            }
-          }
-        );
-      });
+      // Check if table exists using synchronous API
+      const tableExists = db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
+      ).get(table) !== undefined;
       
       if (!tableExists) {
         return res.status(404).json({
@@ -241,65 +213,41 @@ router.get('/:table/schema',
         });
       }
       
-      // Get table schema
-      const columns = await new Promise((resolve, reject) => {
-        db.all(
-          `PRAGMA table_info("${table}")`,
-          [],
-          (err, results) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      // Get table schema using synchronous API
+      let columns;
+      try {
+        columns = db.prepare(`PRAGMA table_info("${table}")`).all();
+      } catch (err) {
+        throw new Error(`Error getting column info: ${err.message}`);
+      }
       
       // Get foreign key info
-      const foreignKeys = await new Promise((resolve, reject) => {
-        db.all(
-          `PRAGMA foreign_key_list("${table}")`,
-          [],
-          (err, results) => {
-            if (err) {
-              console.warn(`Error getting foreign keys for ${table}: ${err.message}`);
-              resolve([]);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      let foreignKeys;
+      try {
+        foreignKeys = db.prepare(`PRAGMA foreign_key_list("${table}")`).all();
+      } catch (err) {
+        console.warn(`Error getting foreign keys for ${table}: ${err.message}`);
+        foreignKeys = [];
+      }
       
       // Get index info
-      const indices = await new Promise((resolve, reject) => {
-        db.all(
-          `PRAGMA index_list("${table}")`,
-          [],
-          (err, results) => {
-            if (err) {
-              console.warn(`Error getting indices for ${table}: ${err.message}`);
-              resolve([]);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      let indices;
+      try {
+        indices = db.prepare(`PRAGMA index_list("${table}")`).all();
+      } catch (err) {
+        console.warn(`Error getting indices for ${table}: ${err.message}`);
+        indices = [];
+      }
       
-      // Process index details
-      const indexDetails = await Promise.all(indices.map(async (index) => {
-        const columns = await new Promise((resolve, reject) => {
-          db.all(`PRAGMA index_info("${index.name}")`, [], (err, results) => {
-            if (err) {
-              console.warn(`Error getting index details for ${index.name}: ${err.message}`);
-              resolve([]);
-            } else {
-              resolve(results || []);
-            }
-          });
-        });
+      // Process index details with synchronous API
+      const indexDetails = indices.map((index) => {
+        let columns;
+        try {
+          columns = db.prepare(`PRAGMA index_info("${index.name}")`).all();
+        } catch (err) {
+          console.warn(`Error getting index details for ${index.name}: ${err.message}`);
+          columns = [];
+        }
         
         return {
           ...index,
@@ -308,7 +256,7 @@ router.get('/:table/schema',
             position: col.seqno
           }))
         };
-      }));
+      });
       
       // Format the columns with additional info
       const formattedColumns = columns.map(column => {
@@ -417,20 +365,13 @@ router.get('/:table/data',
       const filter = queryBuilder.parseRawFilter(filterParam);
       
       // Get table schema to determine date fields and searchable columns
-      const columns = await new Promise((resolve, reject) => {
-        db.all(
-          `PRAGMA table_info("${table}")`,
-          [],
-          (err, results) => {
-            if (err) {
-              console.error(`Error getting column info: ${err.message}`);
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      let columns;
+      try {
+        columns = db.prepare(`PRAGMA table_info("${table}")`).all();
+      } catch (err) {
+        console.error(`Error getting column info: ${err.message}`);
+        throw new Error(`Error getting column info: ${err.message}`);
+      }
       
       // Extract column names for search if needed
       const columnNames = columns.map(col => col.name);
@@ -575,35 +516,21 @@ router.get('/:table/data',
         countQuery = queryBuilder.buildCountQuery(table, filter);
       }
       
-      // Execute count query first to get total
-      const countResult = await new Promise((resolve, reject) => {
-        db.get(
-          countQuery.sql,
-          countQuery.params,
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result || { count: 0 });
-            }
-          }
-        );
-      });
+      // Execute count query first to get total using synchronous API
+      let countResult;
+      try {
+        countResult = db.prepare(countQuery.sql).get(...countQuery.params) || { count: 0 };
+      } catch (err) {
+        throw new Error(`Error executing count query: ${err.message}`);
+      }
       
-      // Now execute the main data query
-      const data = await new Promise((resolve, reject) => {
-        db.all(
-          query.sql,
-          query.params,
-          (err, results) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      // Now execute the main data query using synchronous API
+      let data;
+      try {
+        data = db.prepare(query.sql).all(...query.params);
+      } catch (err) {
+        throw new Error(`Error executing data query: ${err.message}`);
+      }
       
       // Clear the timeout as we've completed the operation
       clearTimeout(timeoutId);
@@ -660,37 +587,23 @@ router.get('/:table/data/sample',
       // Use the sample query builder from the enhanced query builder
       const sampleQuery = queryBuilder.buildSampleQuery(table, parseInt(limit));
       
-      // Execute the sample query
-      const data = await new Promise((resolve, reject) => {
-        db.all(
-          sampleQuery.sql,
-          sampleQuery.params,
-          (err, results) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      // Execute the sample query using synchronous API
+      let data;
+      try {
+        data = db.prepare(sampleQuery.sql).all(...sampleQuery.params);
+      } catch (err) {
+        throw new Error(`Error executing sample query: ${err.message}`);
+      }
       
       // Get total count using query builder
       const countQuery = queryBuilder.buildCountQuery(table);
-      const countResult = await new Promise((resolve, reject) => {
-        db.get(
-          countQuery.sql,
-          countQuery.params,
-          (err, result) => {
-            if (err) {
-              console.warn(`Error counting rows for ${table}: ${err.message}`);
-              resolve({ count: 0 });
-            } else {
-              resolve(result || { count: 0 });
-            }
-          }
-        );
-      });
+      let countResult;
+      try {
+        countResult = db.prepare(countQuery.sql).get(...countQuery.params) || { count: 0 };
+      } catch (err) {
+        console.warn(`Error counting rows for ${table}: ${err.message}`);
+        countResult = { count: 0 };
+      }
       
       // Return the sample
       res.json({
@@ -747,20 +660,13 @@ router.get('/:table/search',
         });
       }
       
-      // Get table columns to determine which ones to search
-      const tableColumns = await new Promise((resolve, reject) => {
-        db.all(
-          `PRAGMA table_info("${table}")`,
-          [],
-          (err, results) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      // Get table columns to determine which ones to search using synchronous API
+      let tableColumns;
+      try {
+        tableColumns = db.prepare(`PRAGMA table_info("${table}")`).all();
+      } catch (err) {
+        throw new Error(`Error getting table columns: ${err.message}`);
+      }
       
       // Parse columns parameter
       let searchColumns = [];
@@ -808,20 +714,13 @@ router.get('/:table/search',
         }
       );
       
-      // Execute search query
-      const data = await new Promise((resolve, reject) => {
-        db.all(
-          searchQuery.sql,
-          searchQuery.params,
-          (err, results) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
-          }
-        );
-      });
+      // Execute search query using synchronous API
+      let data;
+      try {
+        data = db.prepare(searchQuery.sql).all(...searchQuery.params);
+      } catch (err) {
+        throw new Error(`Error executing search query: ${err.message}`);
+      }
       
       // Build and execute count query
       const countQuery = {
@@ -829,19 +728,12 @@ router.get('/:table/search',
         params: Array(searchColumns.length).fill(`%${query}%`)
       };
       
-      const countResult = await new Promise((resolve, reject) => {
-        db.get(
-          countQuery.sql,
-          countQuery.params,
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result || { count: 0 });
-            }
-          }
-        );
-      });
+      let countResult;
+      try {
+        countResult = db.prepare(countQuery.sql).get(...countQuery.params) || { count: 0 };
+      } catch (err) {
+        throw new Error(`Error executing count query: ${err.message}`);
+      }
       
       // Return the search results
       res.json({
