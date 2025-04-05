@@ -100,57 +100,45 @@ const VisualizationBuilder: FC = () => {
         // Get a sample of data from the table
         const sample = await tableApi.getSample(selectedConnection, selectedTable);
         
-        // Transform the data into a format suitable for Chart.js
-        // This is a simplified example - the actual transformation will depend on the chart type
-        const labels: string[] = [];
-        const values: number[] = [];
+        // Parse field mappings for aggregations
+        // Format: fieldName|aggregation (e.g., "sales|sum")
+        const parsedMappings: Record<string, { field: string, aggregation?: string }> = {};
         
-        sample.data.forEach((row: any) => {
-          if (chartType === 'bar' || chartType === 'line') {
-            labels.push(row[fieldMappings.x]);
-            values.push(parseFloat(row[fieldMappings.y]) || 0);
-          } else if (chartType === 'pie' || chartType === 'doughnut') {
-            labels.push(row[fieldMappings.labels]);
-            values.push(parseFloat(row[fieldMappings.values]) || 0);
-          } else if (chartType === 'scatter') {
-            // For scatter, we'll handle it differently since we need x/y coordinates
-            // This is simplified
-            labels.push(row[fieldMappings.x]);
-            values.push(parseFloat(row[fieldMappings.y]) || 0);
+        Object.entries(fieldMappings).forEach(([key, value]) => {
+          if (typeof value === 'string' && value.includes('|')) {
+            const [field, aggregation] = value.split('|');
+            parsedMappings[key] = { field, aggregation };
+          } else {
+            parsedMappings[key] = { field: value as string };
           }
         });
         
-        // Create chart data object
-        const data: ChartData = {
-          labels,
-          datasets: [
-            {
-              label: 'Dataset',
-              data: values,
-              backgroundColor: 
-                chartType === 'bar' ? '#2563EB' :
-                chartType === 'line' ? 'rgba(37, 99, 235, 0.2)' :
-                [
-                  '#2563EB', // blue-600
-                  '#D946EF', // fuchsia-500
-                  '#F59E0B', // amber-500
-                  '#10B981', // emerald-500
-                  '#6366F1', // indigo-500
-                  '#EF4444', // red-500
-                  '#8B5CF6', // violet-500
-                  '#EC4899', // pink-500
-                  '#06B6D4', // cyan-500
-                  '#84CC16', // lime-500
-                ],
-              borderColor: chartType === 'line' ? '#2563EB' : undefined,
-              borderWidth: 2
-            }
-          ]
-        };
+        // Apply aggregations if needed
+        const processedData = applyAggregations(sample.data, parsedMappings, chartType);
         
-        setChartData(data);
+        // Transform the data into a format suitable for Chart.js
+        let chartData: ChartData;
+        
+        switch (chartType) {
+          case 'bar':
+          case 'line':
+            chartData = processBarOrLineChartData(processedData, parsedMappings);
+            break;
+          case 'pie':
+          case 'doughnut':
+            chartData = processPieChartData(processedData, parsedMappings);
+            break;
+          case 'scatter':
+            chartData = processScatterChartData(processedData, parsedMappings);
+            break;
+          default:
+            chartData = processBarOrLineChartData(processedData, parsedMappings);
+        }
+        
+        setChartData(chartData);
         setError(null);
       } catch (err) {
+        console.error('Error generating chart data:', err);
         setError(err instanceof Error ? err.message : 'Failed to generate chart data');
       } finally {
         setLoading(false);
@@ -159,6 +147,324 @@ const VisualizationBuilder: FC = () => {
     
     generateChartData();
   }, [selectedConnection, selectedTable, chartType, fieldMappings, tableSchema]);
+  
+  // Helper function to apply aggregations to data
+  const applyAggregations = (
+    data: any[], 
+    mappings: Record<string, { field: string, aggregation?: string }>,
+    chartType: string
+  ) => {
+    // Return original data if no aggregations needed
+    const hasAggregations = Object.values(mappings).some(m => m.aggregation && m.aggregation !== 'none');
+    if (!hasAggregations) return data;
+    
+    // Determine grouping field based on chart type
+    let groupByField = '';
+    if (chartType === 'bar' || chartType === 'line') {
+      groupByField = mappings.x?.field || '';
+    } else if (chartType === 'pie' || chartType === 'doughnut') {
+      groupByField = mappings.labels?.field || '';
+    } else if (chartType === 'scatter') {
+      // Scatter plots typically don't use aggregation, but we'll support it anyway
+      return data;
+    }
+    
+    if (!groupByField) return data;
+    
+    // Group data by the grouping field
+    const groupedData: Record<string, any[]> = {};
+    data.forEach(row => {
+      const groupValue = String(row[groupByField] || '');
+      if (!groupedData[groupValue]) {
+        groupedData[groupValue] = [];
+      }
+      groupedData[groupValue].push(row);
+    });
+    
+    // Apply aggregations to each group
+    const result = Object.entries(groupedData).map(([groupValue, rows]) => {
+      const resultRow: Record<string, any> = { [groupByField]: groupValue };
+      
+      // Apply aggregations for each mapping that has one
+      Object.entries(mappings).forEach(([mappingKey, { field, aggregation }]) => {
+        if (!aggregation || aggregation === 'none' || field === groupByField) {
+          return;
+        }
+        
+        // Extract numeric values for the field
+        const values = rows
+          .map(row => parseFloat(row[field]))
+          .filter(value => !isNaN(value));
+        
+        // Apply the aggregation function
+        let aggregatedValue = 0;
+        switch (aggregation) {
+          case 'sum':
+            aggregatedValue = values.reduce((sum, value) => sum + value, 0);
+            break;
+          case 'avg':
+            aggregatedValue = values.length > 0 
+              ? values.reduce((sum, value) => sum + value, 0) / values.length 
+              : 0;
+            break;
+          case 'min':
+            aggregatedValue = values.length > 0 
+              ? Math.min(...values) 
+              : 0;
+            break;
+          case 'max':
+            aggregatedValue = values.length > 0 
+              ? Math.max(...values) 
+              : 0;
+            break;
+          case 'count':
+            aggregatedValue = values.length;
+            break;
+          default:
+            aggregatedValue = 0;
+        }
+        
+        resultRow[field] = aggregatedValue;
+      });
+      
+      // Copy non-aggregated fields
+      Object.entries(mappings).forEach(([mappingKey, { field, aggregation }]) => {
+        if ((!aggregation || aggregation === 'none') && field !== groupByField) {
+          // For non-aggregated fields, use the first row's value
+          resultRow[field] = rows[0][field];
+        }
+      });
+      
+      return resultRow;
+    });
+    
+    return result;
+  };
+  
+  // Helper function to process data for bar or line charts
+  const processBarOrLineChartData = (
+    data: any[],
+    mappings: Record<string, { field: string, aggregation?: string }>
+  ): ChartData => {
+    const xField = mappings.x?.field || '';
+    const yField = mappings.y?.field || '';
+    const colorField = mappings.color?.field;
+    
+    // Handle case with color field (creates multiple datasets)
+    if (colorField) {
+      // Group data by the color field
+      const groupedByColor: Record<string, any[]> = {};
+      data.forEach(row => {
+        const colorValue = String(row[colorField] || 'Unknown');
+        if (!groupedByColor[colorValue]) {
+          groupedByColor[colorValue] = [];
+        }
+        groupedByColor[colorValue].push(row);
+      });
+      
+      // Sort data by x-axis values for line charts (improves line rendering)
+      if (chartType === 'line') {
+        Object.keys(groupedByColor).forEach(colorValue => {
+          groupedByColor[colorValue].sort((a, b) => {
+            // Try to sort numerically first
+            const numA = parseFloat(a[xField]);
+            const numB = parseFloat(b[xField]);
+            if (!isNaN(numA) && !isNaN(numB)) {
+              return numA - numB;
+            }
+            // Fall back to string comparison
+            return String(a[xField]).localeCompare(String(b[xField]));
+          });
+        });
+      }
+      
+      // Get unique x values across all datasets
+      const allXValues = Array.from(new Set(data.map(row => row[xField])));
+      
+      // Prepare datasets
+      const datasets = Object.entries(groupedByColor).map(([colorValue, rows], index) => {
+        const color = [
+          '#2563EB', // blue-600
+          '#D946EF', // fuchsia-500
+          '#F59E0B', // amber-500
+          '#10B981', // emerald-500
+          '#6366F1', // indigo-500
+          '#EF4444', // red-500
+          '#8B5CF6', // violet-500
+          '#EC4899', // pink-500
+          '#06B6D4', // cyan-500
+          '#84CC16'  // lime-500
+        ][index % 10];
+        
+        return {
+          label: colorValue,
+          data: rows.map(row => parseFloat(row[yField]) || 0),
+          backgroundColor: chartType === 'bar' ? color : `${color}33`,
+          borderColor: color,
+          borderWidth: 2,
+          tension: chartType === 'line' ? 0.2 : undefined,
+          fill: chartType === 'line' ? true : undefined
+        };
+      });
+      
+      return {
+        labels: data.map(row => String(row[xField])),
+        datasets
+      };
+    } 
+    // Handle simple case (single dataset)
+    else {
+      // Sort data by x-axis values for line charts
+      let processedData = [...data];
+      if (chartType === 'line') {
+        processedData.sort((a, b) => {
+          // Try to sort numerically first
+          const numA = parseFloat(a[xField]);
+          const numB = parseFloat(b[xField]);
+          if (!isNaN(numA) && !isNaN(numB)) {
+            return numA - numB;
+          }
+          // Fall back to string comparison
+          return String(a[xField]).localeCompare(String(b[xField]));
+        });
+      }
+      
+      const labels = processedData.map(row => String(row[xField]));
+      const values = processedData.map(row => parseFloat(row[yField]) || 0);
+      
+      return {
+        labels,
+        datasets: [
+          {
+            label: yField,
+            data: values,
+            backgroundColor: chartType === 'bar' ? '#2563EB' : 'rgba(37, 99, 235, 0.2)',
+            borderColor: chartType === 'line' ? '#2563EB' : undefined,
+            borderWidth: 2,
+            tension: chartType === 'line' ? 0.2 : undefined,
+            fill: chartType === 'line' ? true : undefined
+          }
+        ]
+      };
+    }
+  };
+  
+  // Helper function to process data for pie and doughnut charts
+  const processPieChartData = (
+    data: any[],
+    mappings: Record<string, { field: string, aggregation?: string }>
+  ): ChartData => {
+    const labelsField = mappings.labels?.field || '';
+    const valuesField = mappings.values?.field || '';
+    
+    const labels = data.map(row => String(row[labelsField]));
+    const values = data.map(row => parseFloat(row[valuesField]) || 0);
+    
+    // Generate colors for each segment
+    const baseColors = [
+      '#2563EB', // blue-600
+      '#D946EF', // fuchsia-500
+      '#F59E0B', // amber-500
+      '#10B981', // emerald-500
+      '#6366F1', // indigo-500
+      '#EF4444', // red-500
+      '#8B5CF6', // violet-500
+      '#EC4899', // pink-500
+      '#06B6D4', // cyan-500
+      '#84CC16'  // lime-500
+    ];
+    
+    // Repeat colors if needed
+    const colors = labels.map((_, i) => baseColors[i % baseColors.length]);
+    
+    return {
+      labels,
+      datasets: [
+        {
+          data: values,
+          backgroundColor: colors,
+          borderColor: '#FFFFFF',
+          borderWidth: 2
+        }
+      ]
+    };
+  };
+  
+  // Helper function to process data for scatter charts
+  const processScatterChartData = (
+    data: any[],
+    mappings: Record<string, { field: string, aggregation?: string }>
+  ): ChartData => {
+    const xField = mappings.x?.field || '';
+    const yField = mappings.y?.field || '';
+    const sizeField = mappings.size?.field;
+    const colorField = mappings.color?.field;
+    
+    // Transform data for scatter chart
+    // For scatter charts, we need to transform the data into a format that Chart.js expects
+    if (colorField) {
+      // Group data by the color field
+      const groupedByColor: Record<string, any[]> = {};
+      data.forEach(row => {
+        const colorValue = String(row[colorField] || 'Unknown');
+        if (!groupedByColor[colorValue]) {
+          groupedByColor[colorValue] = [];
+        }
+        groupedByColor[colorValue].push(row);
+      });
+      
+      // Create datasets for each color group
+      const datasets = Object.entries(groupedByColor).map(([colorValue, rows], index) => {
+        const color = [
+          '#2563EB', // blue-600
+          '#D946EF', // fuchsia-500
+          '#F59E0B', // amber-500
+          '#10B981', // emerald-500
+          '#6366F1', // indigo-500
+          '#EF4444', // red-500
+          '#8B5CF6', // violet-500
+          '#EC4899', // pink-500
+          '#06B6D4', // cyan-500
+          '#84CC16'  // lime-500
+        ][index % 10];
+        
+        return {
+          label: colorValue,
+          data: rows.map(row => ({
+            x: parseFloat(row[xField]) || 0,
+            y: parseFloat(row[yField]) || 0,
+            r: sizeField ? (parseFloat(row[sizeField]) / 5 || 3) : 5
+          })),
+          backgroundColor: `${color}88`,
+          borderColor: color,
+          borderWidth: 1
+        };
+      });
+      
+      return {
+        labels: [],
+        datasets
+      };
+    } else {
+      // Single dataset for scatter
+      return {
+        labels: [],
+        datasets: [
+          {
+            label: 'Data Points',
+            data: data.map(row => ({
+              x: parseFloat(row[xField]) || 0,
+              y: parseFloat(row[yField]) || 0,
+              r: sizeField ? (parseFloat(row[sizeField]) / 5 || 3) : 5
+            })),
+            backgroundColor: 'rgba(37, 99, 235, 0.6)',
+            borderColor: '#2563EB',
+            borderWidth: 1
+          }
+        ]
+      };
+    }
+  };
   
   const handleConnectionChange = (connectionId: string) => {
     setSelectedConnection(connectionId);
@@ -194,14 +500,45 @@ const VisualizationBuilder: FC = () => {
     try {
       setLoading(true);
       
+      // Extract aggregation information from field mappings
+      const parsedMappings: Record<string, { field: string, aggregation?: string }> = {};
+      let hasAdvancedSettings = false;
+      
+      Object.entries(fieldMappings).forEach(([key, value]) => {
+        if (typeof value === 'string' && value.includes('|')) {
+          const [field, aggregation] = value.split('|');
+          parsedMappings[key] = { field, aggregation };
+          hasAdvancedSettings = true;
+        } else {
+          parsedMappings[key] = { field: value as string };
+        }
+      });
+      
+      // Create a human-readable name for the visualization
+      let vizName = `${selectedTable} ${chartType} chart`;
+      
+      // If using color field, add that to the name
+      if (fieldMappings.color) {
+        const colorField = typeof fieldMappings.color === 'string' && fieldMappings.color.includes('|') 
+          ? fieldMappings.color.split('|')[0] 
+          : fieldMappings.color;
+        vizName += ` by ${colorField}`;
+      }
+      
+      // If using aggregations, note that in the name
+      if (hasAdvancedSettings) {
+        vizName += " (with aggregations)";
+      }
+      
       // Create visualization data object with the structure expected by the API
       const visualizationData = {
-        name: `${selectedTable} ${chartType} chart`,
+        name: vizName,
         type: chartType,
         connectionId: parseInt(selectedConnection, 10),
         tableName: selectedTable,
         config: {
           mappings: fieldMappings,
+          parsedMappings,
           chartType
         }
       };
