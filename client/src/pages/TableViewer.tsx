@@ -1,5 +1,5 @@
-import { FC, useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { FC, useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import TableSelector from '../components/table/TableSelector';
 import DataTable from '../components/table/DataTable';
 import { TableInfo, TableSchema, Connection } from '../types';
@@ -35,6 +35,10 @@ const TableViewer: FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filteredTables, setFilteredTables] = useState<TableInfo[]>([]);
   
+  // Refs to prevent infinite loops
+  const lastQueryRef = useRef<string>('');
+  const isMountedRef = useRef<boolean>(true);
+  
   // Get parameters from URL search params to enable shareable links
   const selectedTable = searchParams.get('table') || null;
   const page = parseInt(searchParams.get('page') || '1', 10);
@@ -57,41 +61,60 @@ const TableViewer: FC = () => {
   
   const filters = getFiltersFromParams();
   
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  
   // Update URL search params when state changes.
   // This keeps the URL in sync with the table view state (pagination, sorting, filtering),
   // allowing for shareable links to specific table views.
   const updateSearchParams = useCallback((updates: Record<string, string | null>) => {
     const newParams = new URLSearchParams(searchParams);
+    let hasChanges = false;
     
-    // Apply updates
+    // Apply updates, but only if values are actually different to avoid infinite loops
     Object.entries(updates).forEach(([key, value]) => {
+      const currentValue = searchParams.get(key);
       if (value === null) {
-        newParams.delete(key);
-      } else {
+        if (currentValue !== null) {
+          newParams.delete(key);
+          hasChanges = true;
+        }
+      } else if (currentValue !== value) {
         newParams.set(key, value);
+        hasChanges = true;
       }
     });
     
-    // Update URL without causing navigation
-    setSearchParams(newParams, { replace: true });
+    // Only update URL if there are actual changes
+    if (hasChanges) {
+      setSearchParams(newParams, { replace: true });
+    }
   }, [searchParams, setSearchParams]);
 
   // Fetch connection info
   useEffect(() => {
+    if (!connectionId) return;
+    
     const fetchConnection = async () => {
-      if (!connectionId) return;
-      
       try {
         const connectionData = await connectionApi.getById(connectionId);
-        setConnection(connectionData);
-        setConnectionError(null);
-        
-        // Update document title with connection name
-        document.title = `${connectionData.name} - SQLite Visualizer`;
+        if (isMountedRef.current) {
+          setConnection(connectionData);
+          setConnectionError(null);
+          // Update document title with connection name
+          document.title = `${connectionData.name} - SQLite Visualizer`;
+        }
       } catch (err) {
         console.error('Failed to fetch connection:', err);
-        setConnectionError(err instanceof Error ? err.message : 'Failed to load connection');
-        setConnection(null);
+        if (isMountedRef.current) {
+          setConnectionError(err instanceof Error ? err.message : 'Failed to load connection');
+          setConnection(null);
+        }
       }
     };
     
@@ -105,19 +128,25 @@ const TableViewer: FC = () => {
 
   // Fetch tables from the selected connection
   useEffect(() => {
+    if (!connectionId) return;
+    
     const fetchTables = async () => {
-      if (!connectionId) return;
-      
       try {
         setLoadingTables(true);
         const data = await tableApi.getAll(connectionId);
-        setTables(data);
-        setFilteredTables(data);
+        if (isMountedRef.current) {
+          setTables(data);
+          setFilteredTables(data);
+        }
       } catch (err) {
         console.error('Failed to fetch tables:', err);
-        setTableError(err instanceof Error ? err.message : 'Failed to load tables');
+        if (isMountedRef.current) {
+          setTableError(err instanceof Error ? err.message : 'Failed to load tables');
+        }
       } finally {
-        setLoadingTables(false);
+        if (isMountedRef.current) {
+          setLoadingTables(false);
+        }
       }
     };
     
@@ -139,15 +168,17 @@ const TableViewer: FC = () => {
   
   // Fetch table schema when table changes
   useEffect(() => {
+    if (!connectionId || !selectedTable) {
+      setTableSchema(null);
+      return;
+    }
+    
     const fetchTableSchema = async () => {
-      if (!connectionId || !selectedTable) {
-        setTableSchema(null);
-        return;
-      }
-      
       try {
         const schema = await tableApi.getSchema(connectionId, selectedTable);
-        setTableSchema(schema);
+        if (isMountedRef.current) {
+          setTableSchema(schema);
+        }
       } catch (err) {
         console.error('Failed to fetch table schema:', err);
       }
@@ -158,8 +189,31 @@ const TableViewer: FC = () => {
 
   // Fetch table data with pagination, sorting, and filtering
   useEffect(() => {
+    if (!connectionId || !selectedTable) return;
+    
     const fetchTableData = async () => {
-      if (!connectionId || !selectedTable) return;
+      // Create a query string to use as cache key and for comparing requests
+      const queryString = new URLSearchParams();
+      queryString.set('page', page.toString());
+      queryString.set('limit', limit.toString());
+      if (sortColumn) {
+        queryString.set('sort', sortColumn);
+        queryString.set('direction', sortDirection);
+      }
+      if (Object.keys(filters).length > 0) {
+        queryString.set('filters', JSON.stringify(filters));
+      }
+      
+      const currentQuery = queryString.toString();
+      
+      // Skip duplicate requests - this prevents infinite loops
+      if (lastQueryRef.current === currentQuery) {
+        console.log('Skipping duplicate table data request:', currentQuery);
+        return;
+      }
+      
+      // Update last query immediately to prevent concurrent requests with same parameters
+      lastQueryRef.current = currentQuery;
       
       try {
         setLoadingData(true);
@@ -180,18 +234,28 @@ const TableViewer: FC = () => {
         }
         
         const data = await tableApi.getData(connectionId, selectedTable, params);
-        setTableData(data);
+        
+        if (isMountedRef.current) {
+          setTableData(data);
+        }
       } catch (err) {
         console.error('Failed to fetch table data:', err);
-        setTableError(err instanceof Error ? err.message : 'Failed to load table data');
-        setTableData({ data: [], total: 0 });
+        if (isMountedRef.current) {
+          setTableError(err instanceof Error ? err.message : 'Failed to load table data');
+          setTableData({ data: [], total: 0 });
+        }
       } finally {
-        setLoadingData(false);
+        if (isMountedRef.current) {
+          setLoadingData(false);
+        }
       }
     };
     
     fetchTableData();
-  }, [connectionId, selectedTable, page, limit, sortColumn, sortDirection, filters]);
+  // We're using a query string for comparison in the effect, 
+  // so we don't need all these individual dependencies
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId, selectedTable, searchParams.toString()]);
   
   // Handle table selection
   const handleTableSelect = (tableName: string) => {
@@ -412,6 +476,9 @@ const TableViewer: FC = () => {
                 loading={loadingData}
                 filters={filters}
                 highlightPattern={searchQuery}
+                connectionId={Number(connectionId)}
+                tableName={selectedTable}
+                showExport={true}
               />
             </>
           ) : (

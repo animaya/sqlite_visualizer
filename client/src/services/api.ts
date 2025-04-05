@@ -5,6 +5,13 @@
  */
 import { Connection, Visualization, Template, ApiError } from '../types';
 
+// Define the global request tracker type
+declare global {
+  interface Window {
+    _requestTracker?: Record<string, number>;
+  }
+}
+
 import { API_BASE_URL } from '../config';
 
 const API_URL = API_BASE_URL.replace('/api', '');
@@ -34,11 +41,12 @@ console.log('API Service Initialized:', {
 async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_URL}/api${endpoint}`;
   
-  console.log(`Making API request to: ${url}`);
+  console.log(`Making API request to: ${url} at ${new Date().toISOString()}`);
   
   const defaultHeaders = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    'X-Request-Time': new Date().toISOString(),
   };
   
   const config = {
@@ -225,13 +233,65 @@ export const tableApi = {
       }
     });
     
+    // Create a cache key from connection, table, and params
+    const cacheKey = `table_data_${connectionId}_${tableName}_${queryParams.toString()}`;
+    
+    // Use a shorter request prevention window (300ms) to avoid blocking legitimate refreshes
+    // but still prevent rapid duplicate requests
+    const requestTracker = window._requestTracker = window._requestTracker || {};
+    
+    // Check if there's a recent identical request in progress
+    if (requestTracker[cacheKey] && (Date.now() - requestTracker[cacheKey]) < 300) {
+      console.log(`Blocking duplicate request for ${cacheKey}, too soon after previous request`);
+      // Return empty compatible data structure
+      return Promise.resolve({
+        data: [],
+        total: 0,
+        page: parseInt(params.page || '1', 10),
+        limit: parseInt(params.limit || '100', 10), 
+        totalPages: 0
+      } as any);
+    }
+    
+    // Mark this request as in progress
+    requestTracker[cacheKey] = Date.now();
+    
+    // Check for cached data with a longer freshness window
+    const cachedData = sessionStorage.getItem(cacheKey);
+    if (cachedData) {
+      try {
+        const parsedData = JSON.parse(cachedData);
+        // Check if cache is still fresh (less than 30 seconds old)
+        if (Date.now() - parsedData.timestamp < 30000) {
+          console.log(`Using cached data for ${cacheKey}`);
+          return Promise.resolve(parsedData.data);
+        }
+      } catch (e) {
+        console.warn('Failed to parse cached data:', e);
+        // Continue with API request if cache parsing fails
+      }
+    }
+    
     return apiRequest<{
       data: T[];
       total: number;
       page: number;
       limit: number;
       totalPages: number;
-    }>(`/connections/${connectionId}/tables/${tableName}/data?${queryParams}`);
+    }>(`/connections/${connectionId}/tables/${tableName}/data?${queryParams}`)
+      .then(response => {
+        // Cache the response with a timestamp
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            data: response,
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.warn('Failed to cache response:', e);
+          // Continue even if caching fails
+        }
+        return response;
+      });
   },
   
   getSample: <T>(connectionId: string | number, tableName: string, limit = 10): Promise<{
