@@ -1,0 +1,451 @@
+# SQLite Visualizer Technical Design Document
+
+## 1. Introduction
+
+### 1.1 Purpose
+This Technical Design Document (TDD) provides detailed specifications for the SQLite Visualizer application. It serves as a comprehensive guide for the development team to implement the application according to the requirements.
+
+### 1.2 Scope
+The SQLite Visualizer is a web-based application designed to provide visual representation of SQLite database content through tabular views and charts. It is designed for a small team of 5 professionals to analyze SQLite database data without requiring SQL knowledge.
+
+### 1.3 Definitions, Acronyms, and Abbreviations
+- **UI**: User Interface
+- **API**: Application Programming Interface
+- **DB**: Database
+- **CSV**: Comma-Separated Values
+- **KPI**: Key Performance Indicator
+
+## 2. System Architecture
+
+### 2.1 High-Level Architecture
+The application follows a client-server architecture:
+- **Client**: Web browser-based interface built with Tailwind CSS and shadcn UI components
+- **Server**: Deno-based backend service that communicates with SQLite databases
+- **Database**: Two types of SQLite databases:
+  - Target databases (read-only access for visualization)
+  - Application database (for storing configurations and saved visualizations)
+
+```
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│                 │      │                 │      │  Target SQLite  │
+│  Web Browser    │<────>│  Deno Server    │<────>│  Databases      │
+│  (Client)       │      │  (Backend)      │      │  (Read-only)    │
+└─────────────────┘      └────────┬────────┘      └─────────────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │  App SQLite DB  │
+                         │  (Config & viz) │
+                         └─────────────────┘
+```
+
+### 2.2 Component Architecture
+
+#### 2.2.1 Frontend Components
+1. **ConnectionManager**
+   - Handles database connection requests
+   - Displays and manages connection history
+   - Performs initial database health checks
+
+2. **TableViewer**
+   - Renders database tables in a clean, filterable format
+   - Provides column sorting and filtering capabilities
+   - Enables selection of data for visualization
+
+3. **VisualizationBuilder**
+   - Constructs charts based on selected data
+   - Provides chart type selection interface
+   - Manages visualization configuration
+
+4. **VisualizationGallery**
+   - Displays saved visualizations
+   - Enables management of saved configurations
+   - Provides export functionality
+
+5. **TemplateSelector**
+   - Presents pre-configured insight templates
+   - Maps template requirements to available data
+   - Generates visualizations from templates
+
+#### 2.2.2 Backend Components
+1. **DatabaseConnector**
+   - Establishes and manages SQLite database connections
+   - Validates connection parameters
+   - Provides database metadata
+
+2. **QueryProcessor**
+   - Executes read-only queries against target databases
+   - Formats query results for frontend consumption
+   - Implements pagination and data sampling for large datasets
+
+3. **VisualizationService**
+   - Processes data for chart generation
+   - Manages saved visualization configurations
+   - Handles visualization template processing
+
+4. **ExportService**
+   - Formats data for CSV export
+   - Handles file generation and delivery
+
+5. **ConfigurationManager**
+   - Manages application settings
+   - Stores and retrieves connection history
+   - Handles saved visualization persistence
+
+## 3. Detailed Technical Specifications
+
+### 3.1 Frontend Technologies
+
+#### 3.1.1 Core Framework
+**Technology Choice**: React with optional TypeScript
+**Rationale**: React offers a robust ecosystem with extensive community support and documentation. TypeScript provides type safety for more robust code.
+
+#### 3.1.2 UI Framework
+**Technology Choice**: Tailwind CSS with shadcn UI
+**Rationale**: Tailwind provides utility-first CSS for rapid development, while shadcn offers pre-built accessible components that work well with Tailwind.
+
+#### 3.1.3 State Management
+**Technology Choice**: React Hooks and Context API
+**Rationale**: React's built-in state management solutions provide a clean, maintainable approach without additional dependencies for an application of this size.
+
+#### 3.1.4 Visualization Libraries
+**Primary Choice**: Chart.js
+**Secondary Choice**: D3.js (for any complex visualizations)
+**Rationale**: Chart.js provides simple, responsive charts with good performance. D3.js can be used for more complex visualizations if needed.
+
+### 3.2 Backend Technologies
+
+#### 3.2.1 Runtime Environment
+**Technology Choice**: Node.js
+**Rationale**: Node.js is a widely-used JavaScript runtime with a mature ecosystem and extensive library support.
+
+#### 3.2.2 Web Framework
+**Technology Choice**: Express.js
+**Rationale**: Express is a minimal and flexible Node.js web application framework that provides robust features for web and mobile applications.
+
+#### 3.2.3 Database Access
+**Technology Choice**: `better-sqlite3` Node.js module
+**Rationale**: High-performance SQLite3 library for Node.js with prepared statements, transactions, and type-safe binding.
+
+#### 3.2.4 API Pattern
+**Technology Choice**: REST API with JSON
+**Rationale**: Simple, widely understood pattern suitable for the application's needs.
+
+### 3.3 Database Schema
+
+#### 3.3.1 Application Database
+
+```sql
+-- Database Connections Table
+CREATE TABLE connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    size_bytes INTEGER,
+    table_count INTEGER,
+    is_valid BOOLEAN DEFAULT 1
+);
+
+-- Saved Visualizations Table
+CREATE TABLE saved_visualizations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,  -- 'bar', 'pie', 'line', etc.
+    config TEXT NOT NULL,  -- JSON configuration
+    table_name TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+);
+
+-- Insight Templates Table
+CREATE TABLE insight_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    type TEXT NOT NULL,  -- 'bar', 'pie', 'line', etc.
+    config TEXT NOT NULL,  -- JSON configuration template
+    category TEXT,  -- e.g., 'sales', 'performance', etc.
+    is_default BOOLEAN DEFAULT 0
+);
+```
+
+### 3.4 API Endpoints
+
+#### 3.4.1 Connection Management
+- `GET /api/connections` - List all saved connections
+- `POST /api/connections` - Create a new connection
+- `GET /api/connections/:id` - Get connection details
+- `DELETE /api/connections/:id` - Remove a connection
+- `GET /api/connections/:id/health` - Check database health/size
+
+#### 3.4.2 Database Exploration
+- `GET /api/connections/:id/tables` - List all tables in the database
+- `GET /api/connections/:id/tables/:table/schema` - Get table schema
+- `GET /api/connections/:id/tables/:table/data` - Get table data (with pagination)
+- `GET /api/connections/:id/tables/:table/data/sample` - Get a sample of table data
+
+#### 3.4.3 Visualization Management
+- `POST /api/visualizations` - Create a new visualization
+- `GET /api/visualizations` - List all saved visualizations
+- `GET /api/visualizations/:id` - Get visualization details
+- `PUT /api/visualizations/:id` - Update a visualization
+- `DELETE /api/visualizations/:id` - Delete a visualization
+- `GET /api/templates` - List all insight templates
+- `GET /api/templates/:id` - Get template details
+- `POST /api/templates/:id/apply` - Apply template to selected data
+
+#### 3.4.4 Export Functionality
+- `GET /api/export/csv/:vizId` - Export visualization as CSV
+- `GET /api/export/csv/table/:connectionId/:tableName` - Export table as CSV
+
+### 3.5 Data Flow Diagrams
+
+#### 3.5.1 Database Connection Flow
+```
+User → Input Connection Details → Backend Validates → Check DB Size/Health → 
+Connect to DB → Save Connection to App DB → Return Connection Details
+```
+
+#### 3.5.2 Visualization Creation Flow
+```
+User → Select Table → Choose Data Fields → Select Chart Type → 
+Configure Chart Options → Backend Processes Data → 
+Generate Visualization → Optional: Save Configuration → Render Chart
+```
+
+#### 3.5.3 Template Application Flow
+```
+User → Select Template → Backend Analyzes DB Structure → 
+Suggest Field Mappings → User Confirms/Adjusts Mappings → 
+Backend Processes Data → Generate Visualization → Render Chart
+```
+
+## 4. Implementation Details
+
+### 4.1 Frontend Implementation
+
+#### 4.1.1 Component Structure
+The frontend will follow a component-based architecture:
+
+```
+src/
+├── components/
+│   ├── common/
+│   │   ├── Button.tsx
+│   │   ├── Dropdown.tsx
+│   │   ├── Modal.tsx
+│   │   └── ...
+│   ├── connection/
+│   │   ├── ConnectionForm.tsx
+│   │   ├── ConnectionList.tsx
+│   │   └── ...
+│   ├── table/
+│   │   ├── DataTable.tsx
+│   │   ├── TableSelector.tsx
+│   │   └── ...
+│   ├── visualization/
+│   │   ├── ChartRenderer.tsx
+│   │   ├── ChartTypeSelector.tsx
+│   │   ├── FieldMapper.tsx
+│   │   └── ...
+│   └── templates/
+│       ├── TemplateList.tsx
+│       ├── TemplateConfigurator.tsx
+│       └── ...
+├── layouts/
+│   ├── MainLayout.tsx
+│   └── ...
+├── pages/
+│   ├── Connections.tsx
+│   ├── TableViewer.tsx
+│   ├── VisualizationBuilder.tsx
+│   ├── SavedVisualizations.tsx
+│   └── ...
+├── services/
+│   ├── api.ts
+│   ├── connectionService.ts
+│   ├── visualizationService.ts
+│   └── ...
+└── utils/
+    ├── dataTransformers.ts
+    ├── formatters.ts
+    └── ...
+```
+
+#### 4.1.2 State Management
+The application will use a combination of:
+- **React useState/useReducer**: For local component state
+- **React Context API**: For shared application state
+- **URL Parameters**: For shareable visualization states
+
+#### 4.1.3 Routing Structure
+```
+/                        → Home/Dashboard
+/connections             → Connection management
+/connections/:id/tables  → Table explorer
+/visualize               → Visualization builder
+/gallery                 → Saved visualizations
+/templates               → Insight templates
+```
+
+### 4.2 Backend Implementation
+
+#### 4.2.1 Directory Structure
+```
+server/
+├── routes/
+│   ├── connections.js
+│   ├── tables.js
+│   ├── visualizations.js
+│   ├── templates.js
+│   └── export.js
+├── services/
+│   ├── connectionService.js
+│   ├── databaseService.js
+│   ├── visualizationService.js
+│   ├── templateService.js
+│   └── exportService.js
+├── models/
+│   ├── connection.js
+│   ├── visualization.js
+│   └── template.js
+├── utils/
+│   ├── dbUtils.js
+│   ├── queryBuilder.js
+│   └── responseFormatter.js
+├── middleware/
+│   ├── errorHandler.js
+│   └── dataValidator.js
+└── app.js
+```
+
+#### 4.2.2 Database Connection Handling
+- Connection pooling for target databases
+- Connection validation and health checking
+- Table schema introspection
+- Read-only query execution with timeout protection
+
+#### 4.2.3 Data Processing
+- Pagination implementation for large datasets
+- Data transformation for visualization preparation
+- Type inference for automatic chart suggestions
+- Template mapping logic for insight generation
+
+### 4.3 Security Considerations
+
+#### 4.3.1 Input Validation
+- All user inputs sanitized before use in database queries
+- Schema validation for API payloads
+- Path traversal prevention for database file access
+
+#### 4.3.2 Query Safety
+- Parameterized queries to prevent SQL injection
+- Query timeout limits to prevent long-running operations
+- Read-only access enforcement
+
+#### 4.3.3 Error Handling
+- Custom error classes for different error types
+- Generic error responses to avoid exposing system details
+- Comprehensive error logging
+
+## 5. Testing Strategy
+
+### 5.1 Unit Testing
+- Component tests for frontend UI elements
+- Service function tests for backend logic
+- Data transformation function tests
+
+### 5.2 Integration Testing
+- API endpoint tests
+- Database connection tests
+- End-to-end user flow tests
+
+### 5.3 Performance Testing
+- Response time with various database sizes
+- Chart rendering performance with large datasets
+- Connection handling under concurrent usage
+
+## 6. Deployment Considerations
+
+### 6.1 Local Development Setup
+```bash
+# Clone repository
+git clone [repository-url]
+
+# Install dependencies
+cd sqlite-visualizer
+npm install
+
+# Set up application database
+node scripts/setup-db.js
+
+# Start development server
+npm run dev
+```
+
+### 6.2 Production Deployment
+For local Mac deployment:
+```bash
+# Build production assets
+npm run build
+
+# Start production server
+npm start
+```
+
+### 6.3 Network Configuration
+- Configure server to listen on specified port
+- Set up local network access for team members
+- Document IP/hostname for team access
+
+## 7. Performance Optimization
+
+### 7.1 Database Query Optimization
+- Implement query result caching for frequently accessed data
+- Use data sampling for large tables (>10,000 rows)
+- Implement lazy loading for table data
+
+### 7.2 Frontend Optimization
+- Bundle splitting for faster initial load
+- Virtualized tables for large datasets
+- Chart rendering optimizations
+- Asset compression and caching
+
+## 8. Future Technical Considerations
+
+### 8.1 Potential Extensions
+- Support for additional database types
+- More advanced visualization types
+- Query builder interface for advanced users
+- Data modification capabilities
+
+### 8.2 Scalability Path
+- Move to separate application and visualization databases
+- Implement more robust caching
+- Add authentication for wider deployment
+- Support for remote database connections
+
+## 9. Appendices
+
+### 9.1 Technology Stack Reference
+- **Node.js**: https://nodejs.org/
+- **Express.js**: https://expressjs.com/
+- **SQLite**: https://www.sqlite.org/
+- **better-sqlite3**: https://github.com/JoshuaWise/better-sqlite3
+- **Preact**: https://preactjs.com/
+- **Tailwind CSS**: https://tailwindcss.com/
+- **shadcn UI**: https://ui.shadcn.com/
+- **Chart.js**: https://www.chartjs.org/
+
+### 9.2 Coding Standards
+- Use JavaScript with optional TypeScript for type checking
+- Follow Airbnb JavaScript Style Guide
+- Component naming: PascalCase
+- Function naming: camelCase
+- API endpoints: kebab-case
+- Commit messages: Conventional Commits format
+
+This Technical Design Document provides a comprehensive guide for implementing the SQLite Visualizer application according to the requirements. It should serve as the primary reference during the development process.

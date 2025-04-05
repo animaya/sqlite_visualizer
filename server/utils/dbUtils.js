@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 
 /**
  * Get the size of a SQLite database file
@@ -39,25 +39,20 @@ function validateDatabase(dbPath) {
       }
       
       // Try to open the database
-      const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-        if (err) {
-          console.error(`Error opening database: ${err.message}`);
-          resolve(false);
-          return;
-        }
+      try {
+        const db = new Database(dbPath, { readonly: true });
         
         // Try a simple query
-        db.get('SELECT sqlite_version()', [], (err, row) => {
-          db.close();
-          
-          if (err) {
-            console.error(`Error validating database: ${err.message}`);
-            resolve(false);
-          } else {
-            resolve(true);
-          }
-        });
-      });
+        const row = db.prepare('SELECT sqlite_version()').get();
+        
+        // Close the database
+        db.close();
+        
+        resolve(!!row);
+      } catch (error) {
+        console.error(`Error validating database: ${error.message}`);
+        resolve(false);
+      }
     } catch (error) {
       console.error(`Error validating database: ${error.message}`);
       resolve(false);
@@ -68,29 +63,21 @@ function validateDatabase(dbPath) {
 /**
  * Get the number of tables in a database
  * @param {Object} db - Database connection
- * @returns {Promise<number>} Table count
+ * @returns {number} Table count
  */
 function getTableCount(db) {
-  return new Promise((resolve) => {
-    try {
-      db.get(`
-        SELECT COUNT(*) as count 
-        FROM sqlite_master 
-        WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-      `, [], (err, row) => {
-        if (err) {
-          console.error(`Error counting tables: ${err.message}`);
-          resolve(0);
-          return;
-        }
-        
-        resolve(row.count);
-      });
-    } catch (error) {
-      console.error(`Error counting tables: ${error.message}`);
-      resolve(0);
-    }
-  });
+  try {
+    const row = db.prepare(`
+      SELECT COUNT(*) as count 
+      FROM sqlite_master 
+      WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+    `).get();
+    
+    return row ? row.count : 0;
+  } catch (error) {
+    console.error(`Error counting tables: ${error.message}`);
+    return 0;
+  }
 }
 
 /**
@@ -184,34 +171,25 @@ function parseColumnType(typeName) {
  * @param {string} tableName - Table name
  * @param {string} columnName - Column name
  * @param {number} limit - Number of sample rows
- * @returns {Promise<Array>} Column sample data
+ * @returns {Array} Column sample data
  */
 function getColumnSample(db, tableName, columnName, limit = 5) {
-  return new Promise((resolve) => {
-    try {
-      const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
-      const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
-      
-      const query = `
-        SELECT ${escapedColumn}
-        FROM ${escapedTable}
-        WHERE ${escapedColumn} IS NOT NULL
-        LIMIT ?
-      `;
-      
-      db.all(query, [limit], (err, rows) => {
-        if (err) {
-          console.error(`Error getting column sample: ${err.message}`);
-          resolve([]);
-        } else {
-          resolve(rows);
-        }
-      });
-    } catch (error) {
-      console.error(`Error getting column sample: ${error.message}`);
-      resolve([]);
-    }
-  });
+  try {
+    const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
+    const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
+    
+    const query = `
+      SELECT ${escapedColumn}
+      FROM ${escapedTable}
+      WHERE ${escapedColumn} IS NOT NULL
+      LIMIT ?
+    `;
+    
+    return db.prepare(query).all(limit);
+  } catch (error) {
+    console.error(`Error getting column sample: ${error.message}`);
+    return [];
+  }
 }
 
 /**
@@ -219,148 +197,21 @@ function getColumnSample(db, tableName, columnName, limit = 5) {
  * @param {Object} db - Database connection
  * @param {string} tableName - Table name
  * @param {string} columnName - Column name
- * @returns {Promise<Object>} Column statistics
+ * @returns {Object} Column statistics
  */
 function getColumnStats(db, tableName, columnName) {
-  return new Promise((resolve) => {
-    try {
-      const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
-      const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
-      
-      // Get column type from pragma
-      db.all(`PRAGMA table_info(${escapedTable})`, [], (err, columns) => {
-        if (err) {
-          console.error(`Error getting column info: ${err.message}`);
-          resolve({
-            count: 0,
-            distinct_count: 0,
-            null_count: 0,
-            type: 'unknown',
-            isNumeric: false,
-            isDate: false,
-            isText: false
-          });
-          return;
-        }
-        
-        const columnInfo = columns.find(col => col.name === columnName);
-        
-        if (!columnInfo) {
-          console.error(`Column '${columnName}' not found in table '${tableName}'`);
-          resolve({
-            count: 0,
-            distinct_count: 0,
-            null_count: 0,
-            type: 'unknown',
-            isNumeric: false,
-            isDate: false,
-            isText: false
-          });
-          return;
-        }
-        
-        const typeInfo = parseColumnType(columnInfo.type);
-        
-        // For numeric columns, get statistics
-        if (typeInfo.isNumeric) {
-          db.get(`
-            SELECT
-              COUNT(${escapedColumn}) as count,
-              MIN(${escapedColumn}) as min,
-              MAX(${escapedColumn}) as max,
-              AVG(${escapedColumn}) as avg,
-              SUM(${escapedColumn}) as sum
-            FROM ${escapedTable}
-            WHERE ${escapedColumn} IS NOT NULL
-          `, [], (err, stats) => {
-            if (err) {
-              console.error(`Error getting column statistics: ${err.message}`);
-              resolve({
-                count: 0,
-                distinct_count: 0,
-                null_count: 0,
-                type: columnInfo.type,
-                ...typeInfo
-              });
-              return;
-            }
-            
-            // Get count of distinct values
-            db.get(`
-              SELECT COUNT(DISTINCT ${escapedColumn}) as distinct_count
-              FROM ${escapedTable}
-              WHERE ${escapedColumn} IS NOT NULL
-            `, [], (err, distinctResult) => {
-              if (err) {
-                console.error(`Error getting distinct count: ${err.message}`);
-                resolve({
-                  ...stats,
-                  distinct_count: 0,
-                  type: columnInfo.type,
-                  ...typeInfo
-                });
-                return;
-              }
-              
-              resolve({
-                ...stats,
-                distinct_count: distinctResult.distinct_count,
-                type: columnInfo.type,
-                ...typeInfo
-              });
-            });
-          });
-        } else {
-          // For non-numeric columns, just get counts
-          db.get(`
-            SELECT
-              COUNT(${escapedColumn}) as count,
-              COUNT(DISTINCT ${escapedColumn}) as distinct_count
-            FROM ${escapedTable}
-            WHERE ${escapedColumn} IS NOT NULL
-          `, [], (err, counts) => {
-            if (err) {
-              console.error(`Error getting column counts: ${err.message}`);
-              resolve({
-                count: 0,
-                distinct_count: 0,
-                null_count: 0,
-                type: columnInfo.type,
-                ...typeInfo
-              });
-              return;
-            }
-            
-            // Get null count
-            db.get(`
-              SELECT COUNT(*) as null_count
-              FROM ${escapedTable}
-              WHERE ${escapedColumn} IS NULL
-            `, [], (err, nullResult) => {
-              if (err) {
-                console.error(`Error getting null count: ${err.message}`);
-                resolve({
-                  ...counts,
-                  null_count: 0,
-                  type: columnInfo.type,
-                  ...typeInfo
-                });
-                return;
-              }
-              
-              resolve({
-                ...counts,
-                null_count: nullResult.null_count,
-                type: columnInfo.type,
-                ...typeInfo
-              });
-            });
-          });
-        }
-      });
-    } catch (error) {
-      console.error(`Error getting column statistics: ${error.message}`);
-      resolve({
+  try {
+    const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
+    const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
+    
+    // Get column type from pragma
+    const columns = db.prepare(`PRAGMA table_info(${escapedTable})`).all();
+    
+    const columnInfo = columns.find(col => col.name === columnName);
+    
+    if (!columnInfo) {
+      console.error(`Column '${columnName}' not found in table '${tableName}'`);
+      return {
         count: 0,
         distinct_count: 0,
         null_count: 0,
@@ -368,9 +219,89 @@ function getColumnStats(db, tableName, columnName) {
         isNumeric: false,
         isDate: false,
         isText: false
-      });
+      };
     }
-  });
+    
+    const typeInfo = parseColumnType(columnInfo.type);
+    
+    // Create the return object
+    const result = {
+      type: columnInfo.type,
+      ...typeInfo
+    };
+    
+    // Get null count
+    const nullCount = db.prepare(`
+      SELECT COUNT(*) as null_count
+      FROM ${escapedTable}
+      WHERE ${escapedColumn} IS NULL
+    `).get();
+    
+    result.null_count = nullCount ? nullCount.null_count : 0;
+    
+    // For numeric columns, get statistics
+    if (typeInfo.isNumeric) {
+      const stats = db.prepare(`
+        SELECT
+          COUNT(${escapedColumn}) as count,
+          MIN(${escapedColumn}) as min,
+          MAX(${escapedColumn}) as max,
+          AVG(${escapedColumn}) as avg,
+          SUM(${escapedColumn}) as sum
+        FROM ${escapedTable}
+        WHERE ${escapedColumn} IS NOT NULL
+      `).get();
+      
+      if (stats) {
+        Object.assign(result, stats);
+      } else {
+        result.count = 0;
+        result.min = null;
+        result.max = null;
+        result.avg = null;
+        result.sum = null;
+      }
+      
+      // Get count of distinct values
+      const distinctResult = db.prepare(`
+        SELECT COUNT(DISTINCT ${escapedColumn}) as distinct_count
+        FROM ${escapedTable}
+        WHERE ${escapedColumn} IS NOT NULL
+      `).get();
+      
+      result.distinct_count = distinctResult ? distinctResult.distinct_count : 0;
+    } else {
+      // For non-numeric columns, just get counts
+      const counts = db.prepare(`
+        SELECT
+          COUNT(${escapedColumn}) as count,
+          COUNT(DISTINCT ${escapedColumn}) as distinct_count
+        FROM ${escapedTable}
+        WHERE ${escapedColumn} IS NOT NULL
+      `).get();
+      
+      if (counts) {
+        result.count = counts.count;
+        result.distinct_count = counts.distinct_count;
+      } else {
+        result.count = 0;
+        result.distinct_count = 0;
+      }
+    }
+    
+    return result;
+  } catch (error) {
+    console.error(`Error getting column statistics: ${error.message}`);
+    return {
+      count: 0,
+      distinct_count: 0,
+      null_count: 0,
+      type: 'unknown',
+      isNumeric: false,
+      isDate: false,
+      isText: false
+    };
+  }
 }
 
 /**
@@ -378,82 +309,64 @@ function getColumnStats(db, tableName, columnName) {
  * @param {Object} db - Database connection
  * @param {string} tableName - Table name
  * @param {string} columnName - Column name
- * @returns {Promise<boolean>} True if field contains dates
+ * @returns {boolean} True if field contains dates
  */
 function isDateField(db, tableName, columnName) {
-  return new Promise((resolve) => {
-    try {
-      const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
-      const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
-      
-      // Get column type
-      db.all(`PRAGMA table_info(${escapedTable})`, [], (err, columns) => {
-        if (err) {
-          console.error(`Error getting column info: ${err.message}`);
-          resolve(false);
-          return;
-        }
-        
-        const columnInfo = columns.find(col => col.name === columnName);
-        
-        if (!columnInfo) {
-          resolve(false);
-          return;
-        }
-        
-        // Check type name for date keywords
-        const typeName = columnInfo.type.toUpperCase();
-        if (
-          typeName.includes('DATE') || 
-          typeName.includes('TIME') || 
-          typeName.includes('TIMESTAMP')
-        ) {
-          resolve(true);
-          return;
-        }
-        
-        // If it's a text column, sample some values and check if they're dates
-        if (typeName.includes('TEXT') || typeName.includes('VARCHAR') || typeName.includes('CHAR')) {
-          // Get some sample values
-          db.all(`
-            SELECT DISTINCT ${escapedColumn}
-            FROM ${escapedTable}
-            WHERE ${escapedColumn} IS NOT NULL
-            LIMIT 5
-          `, [], (err, rows) => {
-            if (err) {
-              console.error(`Error getting date samples: ${err.message}`);
-              resolve(false);
-              return;
-            }
-            
-            const samples = rows.map(row => row[columnName]);
-            
-            // Check if all samples match date patterns
-            const datePatterns = [
-              /^\d{4}-\d{2}-\d{2}$/, // ISO date
-              /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, // ISO datetime
-              /^\d{2}\/\d{2}\/\d{4}$/, // US date
-              /^\d{2}\.\d{2}\.\d{4}$/, // European date
-              /^\d{2}-\d{2}-\d{4}$/ // Another common format
-            ];
-            
-            const isDate = samples.length > 0 && samples.every(sample => {
-              if (typeof sample !== 'string') return false;
-              return datePatterns.some(pattern => pattern.test(sample));
-            });
-            
-            resolve(isDate);
-          });
-        } else {
-          resolve(false);
-        }
-      });
-    } catch (error) {
-      console.error(`Error checking if field contains dates: ${error.message}`);
-      resolve(false);
+  try {
+    const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
+    const escapedColumn = `"${columnName.replace(/"/g, '""')}"`;
+    
+    // Get column type
+    const columns = db.prepare(`PRAGMA table_info(${escapedTable})`).all();
+    
+    const columnInfo = columns.find(col => col.name === columnName);
+    
+    if (!columnInfo) {
+      return false;
     }
-  });
+    
+    // Check type name for date keywords
+    const typeName = columnInfo.type.toUpperCase();
+    if (
+      typeName.includes('DATE') || 
+      typeName.includes('TIME') || 
+      typeName.includes('TIMESTAMP')
+    ) {
+      return true;
+    }
+    
+    // If it's a text column, sample some values and check if they're dates
+    if (typeName.includes('TEXT') || typeName.includes('VARCHAR') || typeName.includes('CHAR')) {
+      // Get some sample values
+      const rows = db.prepare(`
+        SELECT DISTINCT ${escapedColumn}
+        FROM ${escapedTable}
+        WHERE ${escapedColumn} IS NOT NULL
+        LIMIT 5
+      `).all();
+      
+      const samples = rows.map(row => row[columnName]);
+      
+      // Check if all samples match date patterns
+      const datePatterns = [
+        /^\d{4}-\d{2}-\d{2}$/, // ISO date
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, // ISO datetime
+        /^\d{2}\/\d{2}\/\d{4}$/, // US date
+        /^\d{2}\.\d{2}\.\d{4}$/, // European date
+        /^\d{2}-\d{2}-\d{4}$/ // Another common format
+      ];
+      
+      return samples.length > 0 && samples.every(sample => {
+        if (typeof sample !== 'string') return false;
+        return datePatterns.some(pattern => pattern.test(sample));
+      });
+    }
+    
+    return false;
+  } catch (error) {
+    console.error(`Error checking if field contains dates: ${error.message}`);
+    return false;
+  }
 }
 
 module.exports = {

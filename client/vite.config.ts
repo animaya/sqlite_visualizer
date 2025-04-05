@@ -4,6 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import net from 'net'
 import * as http from 'http'
+import os from 'os'
 
 // Check if a port is available
 const isPortAvailable = (port: number): Promise<boolean> => {
@@ -46,8 +47,22 @@ const findAvailablePort = async (startPort: number): Promise<number> => {
 
 // Get server port by checking if the server is running
 const detectRunningServerPort = async (): Promise<number> => {
+  // Try to read the port from the temp file written by the server
+  const PORT_INFO_FILE = path.join(os.tmpdir(), 'sqlite-visualizer-server-port.txt')
+  
+  try {
+    if (fs.existsSync(PORT_INFO_FILE)) {
+      const port = fs.readFileSync(PORT_INFO_FILE, 'utf8')
+      const portNumber = parseInt(port, 10)
+      console.log(`Found server port ${portNumber} from info file`)
+      return portNumber
+    }
+  } catch (err) {
+    console.warn('Failed to read server port info file:', err)
+  }
+  
   // Default port from server's configuration
-  const DEFAULT_SERVER_PORT = 8765
+  const DEFAULT_SERVER_PORT = 8768
   
   console.log(`Using server port ${DEFAULT_SERVER_PORT}`)
   return DEFAULT_SERVER_PORT

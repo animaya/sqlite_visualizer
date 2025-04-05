@@ -105,7 +105,7 @@ async function applyTemplate(templateId, connectionId, tableNames, mappings) {
     }
     
     // Get template config
-    const templateConfig = template.config;
+    const templateConfig = JSON.parse(template.config);
     
     // Merge user mappings with template config
     const mergedConfig = {
@@ -116,7 +116,6 @@ async function applyTemplate(templateId, connectionId, tableNames, mappings) {
       }
     };
     
-=======
     // Generate data based on template type and config
     let data;
     
@@ -154,7 +153,6 @@ async function applyTemplate(templateId, connectionId, tableNames, mappings) {
   }
 }
 
-=======
 /**
  * Generate data for bar or line charts
  * @param {string} connectionId - Connection ID
@@ -262,7 +260,6 @@ async function generateChartData(connectionId, tableName, config) {
   }
 }
 
-=======
 /**
  * Generate data for pie or doughnut charts
  * @param {string} connectionId - Connection ID
