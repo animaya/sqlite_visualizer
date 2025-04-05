@@ -62,7 +62,7 @@ const detectRunningServerPort = async (): Promise<number> => {
   }
   
   // Default port from server's configuration
-  const DEFAULT_SERVER_PORT = 8768
+  const DEFAULT_SERVER_PORT = 8765
   
   console.log(`Using server port ${DEFAULT_SERVER_PORT}`)
   return DEFAULT_SERVER_PORT

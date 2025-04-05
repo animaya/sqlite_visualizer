@@ -1,5 +1,17 @@
 # SQLite Visualizer
 
+## Troubleshooting
+
+### Node.js Module Compatibility
+
+If you encounter an error related to `better-sqlite3` module version mismatch, you may need to rebuild the native modules:
+
+```bash
+npm rebuild better-sqlite3
+```
+
+This is particularly important if you update your Node.js version or switch between Node.js versions.
+
 A clean, user-friendly web application that visualizes SQLite database content in both tabular and chart formats, allowing for simple data exploration and insight generation without requiring SQL knowledge.
 
 ## Features

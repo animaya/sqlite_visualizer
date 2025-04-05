@@ -6,7 +6,9 @@
 const getServerPort = () => {
   // Always use the default port in development
   // This ensures we connect to the Express server running on port 8765
-  return 8765;
+  const port = 8765;
+  console.log('Using server port:', port);
+  return port;
 };
 
 // Base URL for API requests
@@ -17,7 +19,9 @@ const getApiUrl = () => {
   
   // For development
   const serverPort = getServerPort();
-  return `http://localhost:${serverPort}`;
+  const apiUrl = `http://localhost:${serverPort}`;
+  console.log('API URL:', apiUrl);
+  return apiUrl;
 };
 
 // API Base URL
