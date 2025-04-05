@@ -4,7 +4,7 @@
  * Handles database connection management, storage, and health checks
  */
 
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const appDbService = require('./appDbService');
@@ -102,11 +102,8 @@ async function createConnection(connectionData) {
     console.log("Getting table count...");
     let tempDb;
     try {
-      tempDb = new sqlite3.Database(normalizedPath, sqlite3.OPEN_READONLY);
-      const tableCount = await dbUtils.getTableCount(tempDb);
-      
-      // Close the temporary connection
-      tempDb.close();
+      tempDb = new Database(normalizedPath, { readonly: true });
+      const tableCount = dbUtils.getTableCount(tempDb);
       
       // Save connection to database
       console.log("Saving connection to app database...");
@@ -118,6 +115,9 @@ async function createConnection(connectionData) {
         is_valid: true,
         last_accessed: new Date().toISOString()
       });
+      
+      // Close the temporary connection
+      tempDb.close();
       
       console.log("Connection created successfully:", newConnection);
       return newConnection;
@@ -152,6 +152,8 @@ async function getConnectionById(id) {
     const connection = await connectionModel.findById(id);
     
     if (!connection) {
+      // Log this as a warning rather than an error for debugging
+      console.warn(`Connection with ID ${id} not found in database`);
       throw new Error(`Connection with ID ${id} not found`);
     }
     
@@ -179,10 +181,8 @@ async function deleteConnection(id) {
     if (activeConnections.has(id)) {
       const conn = activeConnections.get(id);
       
-      // Different close method for sqlite3
-      conn.close((err) => {
-        if (err) console.error(`Error closing connection ${id}:`, err);
-      });
+      // Close the connection (better-sqlite3 just needs direct close call)
+      conn.close();
       
       activeConnections.delete(id);
     }
@@ -234,25 +234,25 @@ async function checkDatabaseHealth(id) {
     // Create a temporary connection to get table count
     let isValid = true;
     let tableCount = 0;
+    let tempDb;
     
     try {
-      // Create a temporary connection using sqlite3
-      const tempDb = new sqlite3.Database(connection.path, sqlite3.OPEN_READONLY, (err) => {
-        if (err) {
-          console.error(`Error opening database ${connection.path}:`, err);
-          isValid = false;
-        }
-      });
+      // Create a temporary connection using better-sqlite3
+      tempDb = new Database(connection.path, { readonly: true });
+      tableCount = dbUtils.getTableCount(tempDb);
       
-      if (isValid) {
-        tableCount = await dbUtils.getTableCount(tempDb);
-        
-        // Close the temporary connection
-        tempDb.close();
-      }
+      // Close the temporary connection
+      tempDb.close();
     } catch (error) {
       console.error(`Error connecting to database at ${connection.path}:`, error);
       isValid = false;
+      if (tempDb) {
+        try {
+          tempDb.close();
+        } catch (closeError) {
+          console.error(`Error closing database: ${closeError.message}`);
+        }
+      }
     }
     
     // Update connection in database
@@ -301,8 +301,8 @@ async function getConnection(id) {
       throw new Error(`Database file not found at path: ${connection.path}`);
     }
     
-    // Create a simple database connection
-    const db = new sqlite3.Database(connection.path, sqlite3.OPEN_READONLY);
+    // Create a better-sqlite3 database connection
+    const db = new Database(connection.path, { readonly: true });
     
     // Store in active connections map
     activeConnections.set(id, db);
