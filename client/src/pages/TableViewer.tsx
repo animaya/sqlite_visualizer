@@ -434,36 +434,7 @@ const TableViewer: FC = () => {
           
           {selectedTable ? (
             <>
-              {tableSchema && (
-                <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-md">
-                  <h3 className="text-sm font-medium text-slate-700 mb-2">Table Schema: <span className="font-semibold text-primary">{selectedTable}</span></h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="px-2 py-1 text-left text-slate-600">Column</th>
-                          <th className="px-2 py-1 text-left text-slate-600">Type</th>
-                          <th className="px-2 py-1 text-left text-slate-600">Nullable</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tableSchema.columns.map((column, idx) => (
-                          <tr key={idx} className="border-b border-slate-100">
-                            <td className="px-2 py-1 font-medium text-slate-700">{column.name}</td>
-                            <td className="px-2 py-1 text-slate-600">{column.type}</td>
-                            <td className="px-2 py-1">
-                              {column.nullable ? 
-                                <span className="text-green-600">Yes</span> : 
-                                <span className="text-red-600">No</span>
-                              }
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+              {/* Schema information is hidden in the UI but still available for internal use */}
               
               <DataTable 
                 data={tableData.data}

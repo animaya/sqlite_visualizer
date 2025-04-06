@@ -21,7 +21,10 @@ const TemplateList: FC<TemplateListProps> = ({
   isLoading = false
 }) => {
   // Group templates by category
-  const groupedTemplates = templates.reduce<Record<string, Template[]>>((groups, template) => {
+  const groupedTemplates = (templates || []).reduce<Record<string, Template[]>>((groups, template) => {
+    // Skip null or undefined templates
+    if (!template) return groups;
+    
     const category = template.category || 'Other';
     if (!groups[category]) {
       groups[category] = [];
@@ -46,7 +49,7 @@ const TemplateList: FC<TemplateListProps> = ({
     );
   }
   
-  if (templates.length === 0) {
+  if (!templates || templates.length === 0) {
     return (
       <div className="py-10 text-center">
         <p className="text-slate-500">No templates available</p>

@@ -21,8 +21,9 @@ const API_URL = API_BASE_URL.replace('/api', '');
   try {
     const response = await fetch(`${API_URL}/api/connections`);
     console.log(`Server connection check: ${response.status === 200 ? 'SUCCESS' : 'FAILED'} (${response.status})`);
-  } catch (error) {
-    console.error(`Server connection check FAILED: ${error.message}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Server connection check FAILED: ${errorMessage}`);
     console.log(`Failed connecting to: ${API_URL}/api/connections`);
   }
 })();
@@ -41,12 +42,28 @@ console.log('API Service Initialized:', {
 async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_URL}/api${endpoint}`;
   
+  // Track request to prevent endless loops
+  if (!window._requestTracker) {
+    window._requestTracker = {};
+  }
+  
+  // Check if we've made too many requests to the same endpoint
+  const requestKey = `${options.method || 'GET'}-${endpoint}`;
+  window._requestTracker[requestKey] = (window._requestTracker[requestKey] || 0) + 1;
+  
+  // If we've made more than 3 requests to the same endpoint in a short time, throw an error
+  if (window._requestTracker[requestKey] > 3) {
+    console.error(`Too many requests to ${url}. Possible infinite loop detected.`);
+    window._requestTracker[requestKey] = 0; // Reset the counter
+    throw new ApiError(`Too many requests to the same endpoint. Request aborted to prevent an infinite loop.`, 429);
+  }
+  
   console.log(`Making API request to: ${url} at ${new Date().toISOString()}`);
   
+  // Set headers with careful consideration for CORS
   const defaultHeaders = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'X-Request-Time': new Date().toISOString(),
   };
   
   const config = {
@@ -71,8 +88,19 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
   }
   
   try {
-    // Make the fetch request
-    const response = await fetch(url, config);
+    // Add a timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    // Make the fetch request with abort signal
+    const response = await fetch(url, {
+      ...config,
+      signal: controller.signal
+    });
+    
+    // Clear the timeout
+    clearTimeout(timeoutId);
+    
     console.log(`Received response from ${url} with status: ${response.status}`);
     
     // Try to parse the response as JSON
@@ -95,57 +123,81 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
         console.warn('Received non-JSON response:', text.substring(0, 500) + (text.length > 500 ? '...' : ''));
         data = { message: text };
       }
-    } catch (parseError) {
+    } catch (parseError: unknown) {
       console.error('Error parsing response:', parseError);
-      throw new Error(`Failed to parse server response: ${parseError.message}`);
+      throw new Error(`Failed to parse server response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
     }
     
     // Handle error responses
     if (!response.ok) {
+      // Decrease the request counter for this endpoint on error to prevent loops
+      window._requestTracker[requestKey] = Math.max(0, (window._requestTracker[requestKey] || 1) - 1);
+      
       console.error('Server returned error status:', response.status, data);
-      const errorMessage = data && data.message 
-        ? data.message 
+      const errorMessage = data && typeof data === 'object' && 'message' in data 
+        ? String(data.message) 
         : `API error: ${response.status} ${response.statusText}`;
       
-      const error = new Error(errorMessage) as ApiError;
-      error.status = response.status;
-      error.data = data;
-      throw error;
+      // Create a proper ApiError instance
+      throw new ApiError(
+        errorMessage,
+        response.status,
+        data
+      );
     }
+    
+    // Reset the request counter for successful requests
+    window._requestTracker[requestKey] = 0;
     
     // Return successful response data
     return data;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    // Decrease the request counter for this endpoint on error to prevent loops
+    window._requestTracker[requestKey] = Math.max(0, (window._requestTracker[requestKey] || 1) - 1);
+    
+    // Handle abort errors (timeouts)
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.error('Request timed out:', url);
+      throw new ApiError('Request timed out after 10 seconds', 408, { originalError: error });
+    }
+    
     // Handle network errors
-    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+    if (error instanceof TypeError && (error.message as string).includes('Failed to fetch')) {
       console.error('Network error connecting to server:', error);
       const errorMsg = `Cannot connect to server at ${url}. Please check:
       1. Server is running (on port ${API_URL.split(':').pop()})
       2. Network connectivity
       3. CORS configuration`;
       
-      throw new Error(errorMsg);
+      throw new ApiError(errorMsg, 503, { originalError: error });
+    }
+    
+    // If it's already an ApiError, just rethrow it
+    if (error instanceof ApiError) {
+      throw error;
     }
     
     // Re-throw the error with enhanced context
     console.error('API request failed:', {
       url,
       method: config.method || 'GET',
-      error: {
+      error: error instanceof Error ? {
         name: error.name,
         message: error.message,
-        status: error.status,
-        data: error.data
-      }
+        ...(error instanceof ApiError ? {
+          status: error.status,
+          data: error.data
+        } : {})
+      } : String(error)
     });
     
     // If it's already an augmented API error, just rethrow it
-    if (error.status) {
+    if (error instanceof Error && 'status' in error) {
       throw error;
     }
     
     // Otherwise wrap in a more helpful error
-    throw new Error(`API Error: ${error.message || 'Unknown error'}`);
+    throw new Error(`API Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -317,11 +369,54 @@ export const visualizationApi = {
     apiRequest<{data: Visualization}>(`/visualizations/${id}`)
       .then(response => response.data),
   
-  create: (visualizationData: Omit<Visualization, 'id' | 'createdAt' | 'updatedAt'>): Promise<Visualization> => 
-    apiRequest<{data: Visualization}>('/visualizations', {
+  create: (visualizationData: any): Promise<Visualization> => {
+    // Ensure property names match the server-side expectations
+    const payload = {
+      connection_id: visualizationData.connection_id,
+      name: visualizationData.name,
+      type: visualizationData.type,
+      config: visualizationData.config, // Already stringified in VisualizationBuilder
+      table_name: visualizationData.table_name
+    };
+    
+    console.log('API sending visualization payload:', payload);
+    
+    // Add validation to ensure required fields are present
+    if (!payload.name) {
+      console.error('Missing required field: name');
+      return Promise.reject(new Error('Visualization name is required'));
+    }
+    
+    if (!payload.type) {
+      console.error('Missing required field: type');
+      return Promise.reject(new Error('Visualization type is required'));
+    }
+    
+    if (!payload.connection_id) {
+      console.error('Missing required field: connection_id');
+      return Promise.reject(new Error('Connection ID is required'));
+    }
+    
+    if (!payload.table_name) {
+      console.error('Missing required field: table_name');
+      return Promise.reject(new Error('Table name is required'));
+    }
+    
+    return apiRequest<{data: Visualization}>('/visualizations', {
       method: 'POST',
-      body: JSON.stringify(visualizationData),
-    }).then(response => response.data),
+      body: JSON.stringify(payload),
+    })
+    .then(response => {
+      console.log('API received visualization response:', response);
+      return response.data;
+    })
+    .catch(error => {
+      console.error('Error creating visualization:', error);
+      // Enhance error with more details if available
+      const errorMessage = error.message || 'Failed to create visualization';
+      throw new Error(`API Error: ${errorMessage}`);
+    });
+  },
   
   update: (id: string | number, visualizationData: Partial<Omit<Visualization, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Visualization> => 
     apiRequest<{data: Visualization}>(`/visualizations/${id}`, {

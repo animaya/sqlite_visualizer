@@ -20,17 +20,57 @@ const databaseService = require('./databaseService');
  */
 async function createVisualization(visualizationData) {
   try {
-    // Validate required fields
+    console.log('Creating visualization with data:', JSON.stringify(visualizationData, null, 2));
+    
+    // Validate required fields with detailed error messages
     if (!visualizationData.name) {
+      console.error('Missing required field: name');
       throw new Error('Visualization name is required');
     }
     
     if (!visualizationData.type) {
+      console.error('Missing required field: type');
       throw new Error('Visualization type is required');
     }
     
     if (!visualizationData.config) {
+      console.error('Missing required field: config');
       throw new Error('Visualization configuration is required');
+    }
+    
+    if (!visualizationData.connection_id) {
+      console.error('Missing required field: connection_id');
+      throw new Error('Connection ID is required');
+    }
+    
+    if (!visualizationData.table_name) {
+      console.error('Missing required field: table_name');
+      throw new Error('Table name is required');
+    }
+    
+    // Ensure config is properly handled whether it's a string or object
+    if (typeof visualizationData.config === 'string') {
+      try {
+        // Parse the string to validate it's proper JSON
+        visualizationData.config = JSON.parse(visualizationData.config);
+        console.log('Successfully parsed config from string to object');
+      } catch (err) {
+        console.error('Invalid JSON in configuration:', err);
+        throw new Error('Invalid JSON format in configuration');
+      }
+    } else if (typeof visualizationData.config === 'object') {
+      // If it's already an object, validate it can be stringified
+      try {
+        // Test that we can stringify and parse it without errors
+        JSON.parse(JSON.stringify(visualizationData.config));
+        console.log('Config object is valid JSON');
+      } catch (err) {
+        console.error('Invalid object in configuration (contains circular references):', err);
+        throw new Error('Configuration object contains invalid data');
+      }
+    } else {
+      console.error('Config is neither string nor object:', typeof visualizationData.config);
+      throw new Error('Configuration must be a valid JSON string or object');
     }
     
     // Insert visualization using the appDbService run helper
@@ -43,11 +83,18 @@ async function createVisualization(visualizationData) {
         table_name
       ) VALUES (?, ?, ?, ?, ?)
     `, [
-      visualizationData.connectionId || null,
+      visualizationData.connection_id || null,
       visualizationData.name,
       visualizationData.type,
-      JSON.stringify(visualizationData.config),
-      visualizationData.tableName || null
+      // Always stringify the config for storage, ensuring it's a clean object
+      JSON.stringify(visualizationData.config, (key, value) => {
+        // Handle potential circular references or complex objects
+        if (typeof value === 'function') {
+          return undefined; // Skip functions
+        }
+        return value;
+      }),
+      visualizationData.table_name || null
     ]);
     
     // Get the created visualization
@@ -56,7 +103,12 @@ async function createVisualization(visualizationData) {
     return visualization;
   } catch (error) {
     console.error('Error creating visualization:', error);
-    throw new Error(`Failed to create visualization: ${error.message}`);
+    // Provide more detailed error information
+    const errorMessage = error.message || 'Unknown error';
+    console.error(`Visualization creation failed with error: ${errorMessage}`);
+    
+    // Add context to the error message for better debugging
+    throw new Error(`Failed to create visualization: ${errorMessage}`);
   }
 }
 
@@ -191,8 +243,8 @@ async function updateVisualization(id, visualizationData) {
       name: visualizationData.name || existingViz.name,
       type: visualizationData.type || existingViz.type,
       config: configString,
-      table_name: visualizationData.tableName || existingViz.tableName,
-      connection_id: visualizationData.connectionId || existingViz.connectionId,
+      table_name: visualizationData.table_name || visualizationData.tableName || existingViz.tableName,
+      connection_id: visualizationData.connection_id || visualizationData.connectionId || existingViz.connectionId,
       updated_at: new Date().toISOString()
     };
     
@@ -292,10 +344,14 @@ async function generateVisualizationData(connectionId, tableName, config) {
         break;
       case 'pie':
       case 'doughnut':
+      case 'polarArea':
         result = await generatePieChartData(connectionId, tableName, mappings);
         break;
       case 'scatter':
         result = await generateScatterChartData(connectionId, tableName, mappings);
+        break;
+      case 'radar':
+        result = await generateRadarChartData(connectionId, tableName, mappings);
         break;
       default:
         throw new Error(`Unsupported chart type: ${chartType}`);
@@ -468,6 +524,119 @@ async function generateScatterChartData(connectionId, tableName, mappings) {
   
   return {
     datasets: [dataset],
+    data: result.data
+  };
+}
+
+/**
+ * Generate data for radar charts
+ * @private
+ */
+async function generateRadarChartData(connectionId, tableName, mappings) {
+  // Get labels and values field mappings
+  const labelsField = mappings.labels;
+  const valuesField = mappings.values;
+  const seriesField = mappings.series;
+  
+  if (!labelsField || !valuesField) {
+    throw new Error('Labels and values field mappings are required for radar charts');
+  }
+  
+  // Build and execute query
+  let query;
+  
+  if (seriesField) {
+    // If series field is provided, we need to pivot the data
+    query = `SELECT ${labelsField}, ${seriesField}, ${valuesField} FROM ${tableName}`;
+  } else {
+    // Simple query for single dataset
+    query = `SELECT ${labelsField}, ${valuesField} FROM ${tableName}`;
+  }
+  
+  // Add limit if specified
+  if (mappings.limit && !isNaN(mappings.limit)) {
+    query += ` LIMIT ${mappings.limit}`;
+  }
+  
+  // Execute query
+  const result = await databaseService.executeQuery(connectionId, query);
+  
+  // Chart.js colors (from style guide)
+  const colors = [
+    '#2563EB', // blue-600
+    '#D946EF', // fuchsia-500
+    '#F59E0B', // amber-500
+    '#10B981', // emerald-500
+    '#6366F1', // indigo-500
+    '#EF4444', // red-500
+    '#8B5CF6', // violet-500
+    '#EC4899', // pink-500
+    '#06B6D4', // cyan-500
+    '#84CC16'  // lime-500
+  ];
+  
+  let labels = [];
+  let datasets = [];
+  
+  if (seriesField) {
+    // Group data by series
+    const groupedData = {};
+    const allLabels = new Set();
+    
+    // First pass: collect all labels and group data by series
+    result.data.forEach(row => {
+      const label = row[labelsField];
+      const series = row[seriesField];
+      const value = row[valuesField];
+      
+      allLabels.add(label);
+      
+      if (!groupedData[series]) {
+        groupedData[series] = {};
+      }
+      
+      groupedData[series][label] = value;
+    });
+    
+    // Convert to arrays
+    labels = Array.from(allLabels);
+    
+    // Create datasets for each series
+    let colorIndex = 0;
+    for (const [series, values] of Object.entries(groupedData)) {
+      const color = colors[colorIndex % colors.length];
+      colorIndex++;
+      
+      const dataset = {
+        label: series,
+        data: labels.map(label => values[label] || 0),
+        backgroundColor: `${color}33`, // 20% opacity
+        borderColor: color,
+        borderWidth: 2,
+        pointBackgroundColor: color
+      };
+      
+      datasets.push(dataset);
+    }
+  } else {
+    // Single dataset
+    labels = result.data.map(row => row[labelsField]);
+    
+    const dataset = {
+      label: valuesField,
+      data: result.data.map(row => row[valuesField]),
+      backgroundColor: `${colors[0]}33`, // 20% opacity
+      borderColor: colors[0],
+      borderWidth: 2,
+      pointBackgroundColor: colors[0]
+    };
+    
+    datasets.push(dataset);
+  }
+  
+  return {
+    labels,
+    datasets,
     data: result.data
   };
 }

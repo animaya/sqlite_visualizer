@@ -1,7 +1,8 @@
 import { FC, useRef, useEffect, useState } from 'react';
+import Chart from 'chart.js/auto';
 import { ChartData } from '../../types';
 import {
-  Chart,
+  Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
@@ -12,13 +13,11 @@ import {
   Tooltip,
   Legend,
   Filler,
-  ChartOptions,
-  ChartType
+  ChartOptions
 } from 'chart.js';
-import 'chart.js/auto';
 
 // Register required Chart.js components
-Chart.register(
+ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
@@ -32,10 +31,10 @@ Chart.register(
 );
 
 // Valid chart types
-export type ChartTypeOption = 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter' | 'radar' | 'polarArea';
+export type ChartType = 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter' | 'radar' | 'polarArea';
 
 interface ChartRendererProps {
-  type: ChartTypeOption;
+  type: ChartType;
   data: ChartData;
   title?: string;
   height?: string | number;
@@ -76,8 +75,8 @@ const ChartRenderer: FC<ChartRendererProps> = ({
   ];
   
   // Validate and parse chart type
-  const getChartType = (chartType: string): ChartType => {
-    const validTypes: Record<string, ChartType> = {
+  const getChartType = (chartType: string): Chart.ChartType => {
+    const validTypes: Record<string, Chart.ChartType> = {
       bar: 'bar',
       line: 'line',
       pie: 'pie',
@@ -98,15 +97,10 @@ const ChartRenderer: FC<ChartRendererProps> = ({
   };
   
   // Apply style based on chart type
-  const getStyleForChartType = (chartType: ChartTypeOption, chartData: ChartData) => {
+  const getStyleForChartType = (chartType: ChartType, chartData: ChartData) => {
     // Make sure we have labels and datasets
-    if (!chartData || typeof chartData !== 'object') {
-      return { labels: [], datasets: [] };
-    }
-    
-    // Ensure labels and datasets exist
-    if (!chartData.labels || !Array.isArray(chartData.labels)) chartData.labels = [];
-    if (!chartData.datasets || !Array.isArray(chartData.datasets)) chartData.datasets = [];
+    if (!chartData.labels) chartData.labels = [];
+    if (!chartData.datasets) chartData.datasets = [];
     
     const defaultColors = baseColors.slice(0, Math.max(chartData.datasets.length, chartData.labels.length));
     
@@ -214,7 +208,7 @@ const ChartRenderer: FC<ChartRendererProps> = ({
   };
   
   // Get chart options based on type
-  const getOptionsForChartType = (chartType: ChartTypeOption): ChartOptions<any> => {
+  const getOptionsForChartType = (chartType: ChartType): ChartOptions<any> => {
     // Common options for all chart types
     const commonOptions: ChartOptions<any> = {
       responsive: true,
@@ -430,19 +424,8 @@ const ChartRenderer: FC<ChartRendererProps> = ({
     setError(null);
     
     // Validate data
-    if (!data) {
+    if (!data || !data.datasets || data.datasets.length === 0) {
       setError('No data available for chart');
-      return;
-    }
-    
-    // Ensure data has the correct structure
-    if (!data.datasets || !Array.isArray(data.datasets)) {
-      setError('Data is not iterable: invalid dataset format');
-      return;
-    }
-    
-    if (data.datasets.length === 0) {
-      setError('No datasets available for chart');
       return;
     }
     
@@ -461,15 +444,15 @@ const ChartRenderer: FC<ChartRendererProps> = ({
       const chartType = getChartType(type);
       
       // Apply styling and options
-      const styledData = getStyleForChartType(type as ChartTypeOption, data);
+      const styledData = getStyleForChartType(type as ChartType, data);
       const chartOptions = {
-        ...getOptionsForChartType(type as ChartTypeOption),
+        ...getOptionsForChartType(type as ChartType),
         ...customOptions
       };
       
       // Create chart
       chartInstance.current = new Chart(ctx, {
-        type: chartType as ChartType,
+        type: chartType,
         data: styledData,
         options: chartOptions
       });
@@ -494,7 +477,7 @@ const ChartRenderer: FC<ChartRendererProps> = ({
     );
   }
   
-  if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+  if (!data || !data.datasets || data.datasets.length === 0) {
     return (
       <div className="flex items-center justify-center h-full bg-slate-50 border border-slate-200 rounded p-4">
         <p className="text-sm text-slate-500">No data available</p>

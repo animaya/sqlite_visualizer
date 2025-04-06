@@ -11,7 +11,10 @@
     "build": "cd client && npm run build",
     "setup-db": "node scripts/setup-db.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "stop": "node scripts/stop-processes.js"
+    "stop": "node scripts/stop-processes.js",
+    "fix-sqlite": "./fix-node-sqlite.sh",
+    "start-app": "./start-app.sh",
+    "restart": "./restart-app.sh"
   },
   "author": "",
   "license": "ISC",

@@ -159,10 +159,20 @@ const schemas = {
         .messages({
           'any.only': 'Visualization type must be one of: bar, pie, line, scatter, area'
         }),
-      config: Joi.object().required()
-        .messages({
-          'object.base': 'Chart configuration must be a valid object'
-        }),
+      config: Joi.alternatives().try(
+        Joi.object().required(),
+        Joi.string().custom((value, helpers) => {
+          try {
+            // If it's a string, try to parse it as JSON
+            return JSON.parse(value);
+          } catch (error) {
+            return helpers.error('string.jsonParse');
+          }
+        })
+      ).required().messages({
+        'object.base': 'Chart configuration must be a valid object',
+        'string.jsonParse': 'Chart configuration must be a valid JSON string or object'
+      }),
       table_name: Joi.string().trim().min(1).required()
         .messages({
           'string.empty': 'Table name is required'

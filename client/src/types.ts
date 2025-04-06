@@ -55,6 +55,16 @@ export interface Column {
   nullable: boolean;
   primaryKey?: boolean;
   defaultValue?: string | null;
+  isNumeric?: boolean;
+  isText?: boolean;
+  isDate?: boolean;
+}
+
+// Extended column info with more properties
+export interface ColumnInfo extends Column {
+  isNumeric: boolean;
+  isText: boolean;
+  isDate: boolean;
 }
 
 // Pagination parameters
@@ -65,9 +75,19 @@ export interface PaginationParams {
   direction?: 'asc' | 'desc';
 }
 
-// API error
-export interface ApiError extends Error {
-  status?: number;
+// API error class
+export class ApiError extends Error {
+  status: number;
+  data?: any;
+
+  constructor(message: string, status: number = 500, data?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+    // This is needed for proper instanceof checks in TypeScript with custom Error classes
+    Object.setPrototypeOf(this, ApiError.prototype);
+  }
 }
 
 // Chart data

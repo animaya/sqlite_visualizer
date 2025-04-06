@@ -48,13 +48,23 @@ const Templates: FC = () => {
           templateApi.getCategories()
         ]);
         
-        setTemplates(templatesData);
-        setFilteredTemplates(templatesData);
-        setConnections(connectionsData);
-        setCategories(categoriesData);
+        // Ensure we always have arrays even if API returns null or undefined
+        const safeTemplatesData = Array.isArray(templatesData) ? templatesData : [];
+        const safeConnectionsData = Array.isArray(connectionsData) ? connectionsData : [];
+        const safeCategoriesData = Array.isArray(categoriesData) ? categoriesData : [];
+        
+        setTemplates(safeTemplatesData);
+        setFilteredTemplates(safeTemplatesData);
+        setConnections(safeConnectionsData);
+        setCategories(safeCategoriesData);
         setError(null);
       } catch (err) {
+        console.error('Error fetching templates data:', err);
         setError(err instanceof Error ? err.message : 'Failed to load data');
+        // Initialize with empty arrays on error
+        setTemplates([]);
+        setFilteredTemplates([]);
+        setCategories([]);
       } finally {
         setLoading(false);
       }
@@ -148,10 +158,10 @@ const Templates: FC = () => {
               className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              disabled={loading || categories.length === 0}
+              disabled={loading || !categories || categories.length === 0}
             >
               <option value="">All Categories</option>
-              {categories.map((category) => (
+              {categories && categories.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
@@ -178,7 +188,7 @@ const Templates: FC = () => {
         {/* Filter Status */}
         <div className="mt-4 flex justify-between items-center">
           <p className="text-sm text-slate-500">
-            Showing {filteredTemplates.length} of {templates.length} templates
+            Showing {filteredTemplates?.length || 0} of {templates?.length || 0} templates
           </p>
           
           {(selectedCategory || searchTerm) && (

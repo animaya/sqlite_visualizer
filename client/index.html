@@ -13,6 +13,20 @@
     #root > div:not(:first-child) {
       display: none;
     }
+    
+    /* Ensure the body takes full height */
+    html, body, #root {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    
+    /* Apply base styles while Tailwind loads */
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
   </style>
 </head>
 <body>

@@ -1,6 +1,6 @@
 import { FC } from 'react';
 
-type ChartType = 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter';
+type ChartType = 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter' | 'radar' | 'polarArea';
 
 interface ChartTypeSelectorProps {
   selected: ChartType;
@@ -18,7 +18,9 @@ const ChartTypeSelector: FC<ChartTypeSelectorProps> = ({ selected, onChange }) =
     { id: 'line' as ChartType, label: 'Line Chart', description: 'Show trends over time or categories' },
     { id: 'pie' as ChartType, label: 'Pie Chart', description: 'Show composition as parts of a whole' },
     { id: 'doughnut' as ChartType, label: 'Doughnut Chart', description: 'Similar to pie chart with center hole' },
-    { id: 'scatter' as ChartType, label: 'Scatter Plot', description: 'Show relationship between two variables' }
+    { id: 'scatter' as ChartType, label: 'Scatter Plot', description: 'Show relationship between two variables' },
+    { id: 'radar' as ChartType, label: 'Radar Chart', description: 'Compare multiple variables in a circular layout' },
+    { id: 'polarArea' as ChartType, label: 'Polar Area', description: 'Show relative sizes in a circular layout' }
   ];
   
   return (

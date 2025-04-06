@@ -80,16 +80,17 @@ const findAvailablePort = async (startPort) => {
 };
 
 // Middleware
+// Configure CORS with more permissive settings for development
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if(!origin) return callback(null, true);
-    return callback(null, true); // Allow all origins in development
-  },
+  origin: '*', // Allow all origins
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Request-Time', 'Origin', 'X-Requested-With'],
+  exposedHeaders: ['Content-Length', 'Content-Type']
 }));
+
+// Add preflight OPTIONS handling for all routes
+app.options('*', cors());
 
 app.use(helmet({
   contentSecurityPolicy: false,

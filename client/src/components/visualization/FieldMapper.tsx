@@ -165,6 +165,50 @@ const FieldMapper: FC<FieldMapperProps> = ({ schema, chartType, mappings, onChan
         preferredTypes: ['text', 'category', 'number'],
         supportsAggregation: false
       }
+    ],
+    radar: [
+      {
+        id: 'labels',
+        label: 'Categories',
+        description: 'Categories to display around the radar chart.',
+        required: true,
+        preferredTypes: ['text', 'category'],
+        supportsAggregation: false
+      },
+      {
+        id: 'values',
+        label: 'Values',
+        description: 'Numeric values determining the radar chart shape.',
+        required: true,
+        preferredTypes: ['number', 'integer', 'float', 'double', 'decimal'],
+        supportsAggregation: true
+      },
+      {
+        id: 'series',
+        label: 'Series (Optional)',
+        description: 'Field to create multiple radar shapes.',
+        required: false,
+        preferredTypes: ['text', 'category'],
+        supportsAggregation: false
+      }
+    ],
+    polarArea: [
+      {
+        id: 'labels',
+        label: 'Segments',
+        description: 'Categories to display as segments.',
+        required: true,
+        preferredTypes: ['text', 'category'],
+        supportsAggregation: false
+      },
+      {
+        id: 'values',
+        label: 'Values',
+        description: 'Numeric values determining segment size.',
+        required: true,
+        preferredTypes: ['number', 'integer', 'float', 'double', 'decimal'],
+        supportsAggregation: true
+      }
     ]
   };
   
