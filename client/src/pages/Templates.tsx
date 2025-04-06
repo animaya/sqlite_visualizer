@@ -73,7 +73,7 @@ const Templates: FC = () => {
     fetchData();
   }, []);
   
-  // Apply filters when templates, category, or search term changes
+  // Apply filters when templates, category, search term, or selected connection changes
   useEffect(() => {
     let filtered = [...templates];
     
@@ -92,7 +92,11 @@ const Templates: FC = () => {
     }
     
     setFilteredTemplates(filtered);
-  }, [templates, selectedCategory, searchTerm]);
+    
+    // Log the filtered templates for debugging
+    console.log('Filtered templates:', filtered);
+    console.log('Selected connection:', selectedConnection);
+  }, [templates, selectedCategory, searchTerm, selectedConnection]);
   
   const handleApplyTemplate = (templateId: string | number) => {
     if (!selectedConnection) {
@@ -122,10 +126,10 @@ const Templates: FC = () => {
       )}
       
       {/* Connection Selector */}
-      <div className="bg-white p-6 rounded-md border border-slate-200">
+      <div className="bg-white p-6 rounded-md border border-slate-200 shadow-sm">
         <h2 className="text-lg font-medium text-slate-900 mb-4">Select Database Connection</h2>
         <select 
-          className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+          className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
           value={selectedConnection || ''}
           onChange={(e) => setSelectedConnection(e.target.value)}
           disabled={loading || connections.length === 0}
@@ -145,7 +149,7 @@ const Templates: FC = () => {
       </div>
       
       {/* Filter Controls */}
-      <div className="bg-white p-6 rounded-md border border-slate-200">
+      <div className="bg-white p-6 rounded-md border border-slate-200 shadow-sm">
         <h2 className="text-lg font-medium text-slate-900 mb-4">Filter Templates</h2>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -155,7 +159,7 @@ const Templates: FC = () => {
               Category
             </label>
             <select 
-              className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
               disabled={loading || !categories || categories.length === 0}
@@ -176,7 +180,7 @@ const Templates: FC = () => {
             </label>
             <input 
               type="text"
-              className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm"
+              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search templates..."
@@ -193,7 +197,7 @@ const Templates: FC = () => {
           
           {(selectedCategory || searchTerm) && (
             <button 
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
               onClick={handleClearFilters}
             >
               Clear Filters

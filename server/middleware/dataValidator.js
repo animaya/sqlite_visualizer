@@ -155,9 +155,9 @@ const schemas = {
           'string.min': 'Visualization name must be at least 1 character long',
           'string.max': 'Visualization name cannot exceed 100 characters'
         }),
-      type: Joi.string().valid('bar', 'pie', 'line', 'scatter', 'area').required()
+      type: Joi.string().valid('bar', 'pie', 'line', 'scatter', 'area', 'radar').required()
         .messages({
-          'any.only': 'Visualization type must be one of: bar, pie, line, scatter, area'
+          'any.only': 'Visualization type must be one of: bar, pie, line, scatter, area, radar'
         }),
       config: Joi.alternatives().try(
         Joi.object().required(),
@@ -195,9 +195,9 @@ const schemas = {
           'string.min': 'Visualization name must be at least 1 character long',
           'string.max': 'Visualization name cannot exceed 100 characters'
         }),
-      type: Joi.string().valid('bar', 'pie', 'line', 'scatter', 'area')
+      type: Joi.string().valid('bar', 'pie', 'line', 'scatter', 'area', 'radar')
         .messages({
-          'any.only': 'Visualization type must be one of: bar, pie, line, scatter, area'
+          'any.only': 'Visualization type must be one of: bar, pie, line, scatter, area, radar'
         }),
       config: Joi.object()
         .messages({

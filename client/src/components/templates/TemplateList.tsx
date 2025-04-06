@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import { FC, useEffect } from 'react';
 import { Template } from '../../types';
 import TemplateCard from './TemplateCard';
 
@@ -20,6 +20,11 @@ const TemplateList: FC<TemplateListProps> = ({
   onApplyTemplate,
   isLoading = false
 }) => {
+  // Log when connection or templates change
+  useEffect(() => {
+    console.log('TemplateList - selectedConnectionId:', selectedConnectionId);
+    console.log('TemplateList - templates count:', templates?.length);
+  }, [selectedConnectionId, templates]);
   // Group templates by category
   const groupedTemplates = (templates || []).reduce<Record<string, Template[]>>((groups, template) => {
     // Skip null or undefined templates
@@ -43,7 +48,7 @@ const TemplateList: FC<TemplateListProps> = ({
   
   if (isLoading) {
     return (
-      <div className="py-10 text-center">
+      <div className="py-10 text-center bg-white rounded-md border border-slate-200 shadow-sm">
         <p className="text-slate-500">Loading templates...</p>
       </div>
     );
@@ -51,8 +56,16 @@ const TemplateList: FC<TemplateListProps> = ({
   
   if (!templates || templates.length === 0) {
     return (
-      <div className="py-10 text-center">
+      <div className="py-10 text-center bg-white rounded-md border border-slate-200 shadow-sm">
         <p className="text-slate-500">No templates available</p>
+      </div>
+    );
+  }
+  
+  if (!selectedConnectionId) {
+    return (
+      <div className="py-10 text-center bg-white rounded-md border border-slate-200 shadow-sm">
+        <p className="text-slate-500">Please select a database connection to view available templates</p>
       </div>
     );
   }
@@ -60,7 +73,7 @@ const TemplateList: FC<TemplateListProps> = ({
   return (
     <div className="space-y-10">
       {sortedCategories.map(category => (
-        <div key={category}>
+        <div key={category} className="bg-white p-6 rounded-md border border-slate-200 shadow-sm">
           <h2 className="text-xl font-medium text-slate-900 mb-4 capitalize">{category}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {groupedTemplates[category].map(template => (
